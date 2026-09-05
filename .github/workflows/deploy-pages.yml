@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Record published version
+        run: node -e "require('node:fs').writeFileSync('public/version.json', JSON.stringify({commit:process.env.GITHUB_SHA}))"
+
       - name: Build static game
         run: pnpm build:pages
 
