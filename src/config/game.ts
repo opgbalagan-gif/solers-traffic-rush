@@ -26,3 +26,5 @@ export const GIRL_COLORS = [
 
 export const STORAGE_KEY = 'sollers-traffic-rush-state-v2';
 export const LEADS_KEY = 'sollers-traffic-rush-leads';
+
+export const assetUrl = (path: string) => `${process.env.NEXT_PUBLIC_BASE_PATH || (process.env.GITHUB_ACTIONS === 'true' ? '/solers-traffic-rush' : '')}${path}`;

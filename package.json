@@ -7,13 +7,15 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "next build",
+    "build": "node node_modules/next/dist/bin/next build && node scripts/build-server.mjs",
     "build:pages": "next build",
     "build:vite": "vinext build",
-    "start": "node scripts/serve-static.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "start": "node scripts/local-server.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test": "node scripts/test-game.mjs && node scripts/test-api.mjs"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "next": "16.2.6",
     "phaser": "3.90.0",
     "react": "19.2.6",
@@ -29,6 +31,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "^0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",

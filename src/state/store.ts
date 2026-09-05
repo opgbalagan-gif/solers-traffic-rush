@@ -34,5 +34,5 @@ export function loadGameState(): StoredGameState {
 
 export function saveGameState(state: StoredGameState) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* The race also works when browser storage is blocked. */ }
 }

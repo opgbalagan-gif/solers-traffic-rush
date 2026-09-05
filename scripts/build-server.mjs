@@ -1,0 +1,10 @@
+import { mkdirSync, cpSync, copyFileSync, rmSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+const project=process.cwd(),dist=resolve(project,'dist');
+if(dirname(dist)!==resolve(project)||!dist.endsWith('dist'))throw new Error('Unexpected output path');
+rmSync(dist,{recursive:true,force:true});
+mkdirSync(resolve(dist,'server'),{recursive:true});mkdirSync(resolve(dist,'.openai'),{recursive:true});
+cpSync(resolve(project,'out'),resolve(dist,'client'),{recursive:true});
+copyFileSync(resolve(project,'server/worker.mjs'),resolve(dist,'server/index.js'));
+copyFileSync(resolve(project,'.openai/hosting.json'),resolve(dist,'.openai/hosting.json'));
+console.log('Worker and browser assets are ready.');

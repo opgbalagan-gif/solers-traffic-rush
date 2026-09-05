@@ -1,314 +1,242 @@
 import * as Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH, LANE_X, ROAD_LEFT, ROAD_RIGHT } from '@/src/config/game';
+import { assetUrl } from '@/src/config/game';
+import { PAINT_FILTERS } from '@/src/ui/Visuals';
+import { advanceRun, BIOMES, biomeAt, clamp, depthScale, hitTest, laneX, roadHalf } from '@/src/game/model';
 
-export type HudState = {
-  score: number;
-  speed: number;
-  boost: number;
-};
-
-export type TrafficSceneOptions = {
-  carColor: string;
-  onHud: (hud: HudState) => void;
-  onCrash: (score: number) => void;
-};
-
-type MovingObject = Phaser.GameObjects.GameObject & {
-  y: number;
-  x: number;
-  setPosition: (x: number, y: number) => unknown;
-  getData: (key: string) => unknown;
-  setData: (key: string, value: unknown) => unknown;
-  destroy: () => void;
-};
-
+export type HudState = { score: number; speed: number; boost: number; distance: number; biome: string; ghost: boolean; combo: number; overtakes: number; bonuses: number; lives: number };
+export type TrafficSceneOptions = { carColor: string; onHud: (hud: HudState) => void; onReady: () => void; onError: () => void; onExhausted: () => void };
+type RoadObject = { sprite: Phaser.GameObjects.Image; y: number; lane: number; width: number; ratio: number; kind: 'traffic' | 'bonus'; passed?: boolean; pace: number };
+type Tree = { sprite: Phaser.GameObjects.Image; y: number; side: number; offset: number };
+const FRAMES: [string, number, number, number, number][] = [
+  ['pickup-black', 48, 22, 312, 469], ['pickup-pink', 427, 20, 308, 470],
+  ['blue', 813, 88, 295, 386], ['yellow', 1197, 95, 294, 380],
+  ['red', 45, 550, 313, 432], ['white', 430, 545, 306, 431],
+  ['truck', 816, 503, 295, 477], ['tree', 1155, 520, 373, 474],
+];
 export class TrafficScene extends Phaser.Scene {
   private options: TrafficSceneOptions;
-  private player!: Phaser.Physics.Arcade.Image;
-  private traffic!: Phaser.Physics.Arcade.Group;
-  private bonuses!: Phaser.Physics.Arcade.Group;
-  private roadMarks!: Phaser.GameObjects.Group;
-  private scenery!: Phaser.GameObjects.Group;
+  private player!: Phaser.GameObjects.Image;
+  private world!: Phaser.GameObjects.Graphics;
+  private roadTexture!: Phaser.GameObjects.TileSprite;
+  private roadObjects: RoadObject[] = [];
+  private trees: Tree[] = [];
+  private run = { clock: 0, distance: 0, charge: 100, boostUntil: 0, ghostUntil: 0 };
+  private speed = 100;
   private currentLane = 1;
-  private worldSpeed = 250;
-  private distance = 0;
-  private bonusScore = 0;
-  private spawnTimer = 400;
-  private bonusTimer = 4200;
-  private hudTimer = 0;
-  private boostCharge = 100;
-  private boostUntil = 0;
-  private crashed = false;
+  private steer = 1;
   private pausedByPlayer = false;
+  private spawnTimer = 1;
+  private bonusTimer = 5;
+  private hudTimer = 0;
+  private bonusScore = 0;
+  private combo = 0;
+  private overtakes = 0;
+  private bonuses = 0;
+  private biome = -1;
   private pointerStartX = 0;
+  private lastLane = -1;
+  private failed = false;
+  private lives = 3;
 
   constructor(options: TrafficSceneOptions) {
     super({ key: 'TrafficScene' });
     this.options = options;
   }
-
+  preload() {
+    this.load.image('atlas', assetUrl('/art/traffic-atlas.png'));
+    this.load.on('loaderror', () => { this.failed = true; this.options.onError(); });
+  }
   create() {
-    this.cameras.main.setBackgroundColor('#173d29');
-    this.createTextures();
-    this.drawWorld();
-
-    this.traffic = this.physics.add.group();
-    this.bonuses = this.physics.add.group();
-    this.player = this.physics.add.image(LANE_X[1], 620, 'player-pickup').setDepth(8);
-    this.player.body?.setSize(45, 92).setOffset(10, 12);
-
-    this.physics.add.overlap(this.player, this.traffic, () => this.crash());
-    this.physics.add.overlap(this.player, this.bonuses, (_player, bonus) => {
-      const box = bonus as Phaser.Physics.Arcade.Image;
-      const boxLabel = box.getData('label') as Phaser.GameObjects.Text | undefined;
-      boxLabel?.destroy();
-      box.destroy();
-      this.bonusScore += 10;
-      this.cameras.main.flash(100, 66, 255, 148, false);
-      const label = this.add
-        .text(this.player.x + 40, this.player.y - 40, '+10', {
-          fontFamily: 'Arial Black',
-          fontSize: '22px',
-          color: '#a4ff70',
-          stroke: '#15361f',
-          strokeThickness: 5,
-        })
-        .setOrigin(0.5)
-        .setDepth(20);
-      this.tweens.add({ targets: label, y: label.y - 60, alpha: 0, duration: 650, onComplete: () => label.destroy() });
-    });
-
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.pointerStartX = pointer.x;
-    });
+    if (this.failed || !this.textures.exists('atlas')) return;
+    FRAMES.forEach(([name, x, y, w, h]) => this.textures.get('atlas').add(name, 0, x, y, w, h));
+    const frame = this.options.carColor === '#10161d' ? 'pickup-black' : 'pickup-pink';
+    const source = this.textures.getFrame('atlas', frame);
+    const paint = this.textures.createCanvas('player-paint', source.width, source.height)!;
+    paint.context.filter = this.options.carColor === '#10161d' ? 'none' : (PAINT_FILTERS[this.options.carColor] || 'none');
+    paint.context.drawImage(this.textures.get('atlas').getSourceImage() as HTMLImageElement, source.cutX, source.cutY, source.cutWidth, source.cutHeight, 0, 0, source.width, source.height);
+    paint.refresh();
+    this.world = this.add.graphics().setDepth(0);
+    const asphalt = this.textures.createCanvas('asphalt', 128, 128)!;
+    const ctx = asphalt.context;
+    ctx.fillStyle = '#333638'; ctx.fillRect(0, 0, 128, 128);
+    let seed = 713;
+    for (let i = 0; i < 6500; i++) {
+      seed = (seed * 16807) % 2147483647; const x = seed % 128;
+      seed = (seed * 16807) % 2147483647; const y = seed % 128;
+      ctx.fillStyle = i % 2 ? 'rgba(220,224,218,.075)' : 'rgba(0,0,0,.15)';
+      ctx.fillRect(x, y, 1, 1);
+    }
+    asphalt.refresh();
+    this.roadTexture = this.add.tileSprite(215, 390, 430, 780, 'asphalt').setDepth(1);
+    const mask = this.make.graphics({});
+    mask.fillStyle(0xffffff).fillPoints([{x:151,y:0},{x:279,y:0},{x:445,y:780},{x:-15,y:780}],true);
+    this.roadTexture.setMask(mask.createGeometryMask());
+    this.world = this.add.graphics().setDepth(2);
+    for(let i = 0; i < 26; i++) {
+      const side = i % 2 ? 1 : -1;
+      const sprite = this.add.image(0, 0, 'atlas', 'tree').setOrigin(.5,.9);
+      this.trees.push({ sprite, y: -100 + Math.floor(i/2) * 77, side, offset: 18 + (i * 37) % 75 });
+    }
+    this.player = this.add.image(215, 624, 'player-paint').setDisplaySize(101, 152).setDepth(630);
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.pointerStartX = pointer.x; });
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      const distance = pointer.x - this.pointerStartX;
-      if (Math.abs(distance) > 28) this.move(distance > 0 ? 1 : -1);
-      else this.move(pointer.x < GAME_WIDTH / 2 ? -1 : 1);
+      const dx = pointer.x - this.pointerStartX;
+      this.move(Math.abs(dx) > 20 ? (dx > 0 ? 1 : -1) : (pointer.x < 215 ? -1 : 1));
     });
-
-    const keys = this.input.keyboard?.addKeys('A,D,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>;
-    keys?.A.on('down', () => this.move(-1));
-    keys?.LEFT.on('down', () => this.move(-1));
-    keys?.D.on('down', () => this.move(1));
-    keys?.RIGHT.on('down', () => this.move(1));
+    this.options.onReady();
+    this.spawnTraffic(0, 140); this.spawnTraffic(2, 350);
+    this.emitHud();
   }
-
-  private createTextures() {
-    const trafficColors = [0xef3e4d, 0xffc63d, 0x49bff1, 0xa16cec, 0xf37935, 0xd8e3ea];
-    trafficColors.forEach((color, index) => this.drawVehicleTexture(`traffic-${index}`, color, false));
-    const playerColor = Phaser.Display.Color.HexStringToColor(this.options.carColor).color;
-    this.drawVehicleTexture('player-pickup', playerColor, true);
-
-    const box = this.add.graphics();
-    box.fillStyle(0xbd7929).fillRoundedRect(2, 5, 42, 40, 4);
-    box.lineStyle(3, 0xf2bd55).strokeRoundedRect(2, 5, 42, 40, 4);
-    box.lineStyle(3, 0x7a4519).lineBetween(4, 8, 42, 43).lineBetween(42, 8, 4, 43);
-    box.generateTexture('bonus-box', 46, 48).destroy();
-  }
-
-  private drawVehicleTexture(key: string, color: number, pickup: boolean) {
-    const width = pickup ? 66 : 50;
-    const height = pickup ? 118 : 94;
-    const graphics = this.add.graphics();
-    graphics.fillStyle(0x05090d, 0.55).fillRoundedRect(6, 8, width - 4, height - 4, 14);
-    graphics.fillStyle(0x080d12);
-    graphics.fillRoundedRect(0, 18, 7, 27, 2).fillRoundedRect(width - 7, 18, 7, 27, 2);
-    graphics.fillRoundedRect(0, height - 43, 7, 27, 2).fillRoundedRect(width - 7, height - 43, 7, 27, 2);
-    graphics.fillStyle(color).fillRoundedRect(5, 2, width - 10, height - 7, pickup ? 15 : 12);
-    graphics.lineStyle(2, 0xdbe9ef, 0.35).strokeRoundedRect(8, 5, width - 16, height - 13, 12);
-    graphics.fillStyle(0x183140).fillRoundedRect(12, 25, width - 24, pickup ? 34 : 27, 7);
-    graphics.fillStyle(0x8bd5eb, 0.8).fillRoundedRect(15, 28, width - 30, 10, 4);
-    graphics.fillStyle(0x0d171d).fillRect(width / 2 - 2, 25, 4, pickup ? 35 : 28);
-    if (pickup) {
-      graphics.fillStyle(0x111b21).fillRoundedRect(11, 69, width - 22, 34, 5);
-      graphics.lineStyle(2, 0x81939e, 0.6).strokeRoundedRect(14, 72, width - 28, 27, 4);
-      graphics.lineBetween(15, 86, width - 15, 86);
-    } else {
-      graphics.fillStyle(0x172b38).fillRoundedRect(12, 59, width - 24, 18, 5);
-    }
-    graphics.fillStyle(0xedfaff).fillRoundedRect(10, 6, 13, 7, 3).fillRoundedRect(width - 23, 6, 13, 7, 3);
-    graphics.fillStyle(0xff2d4f).fillRect(10, height - 13, 14, 7).fillRect(width - 24, height - 13, 14, 7);
-    graphics.generateTexture(key, width, height).destroy();
-  }
-
-  private drawWorld() {
-    const world = this.add.graphics();
-    world.fillGradientStyle(0x1c6c3c, 0x236f3c, 0x10462a, 0x164f2c, 1);
-    world.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    world.fillStyle(0xbfc9c8).fillRect(ROAD_LEFT - 12, 0, ROAD_RIGHT - ROAD_LEFT + 24, GAME_HEIGHT);
-    world.fillStyle(0x242c34).fillRect(ROAD_LEFT, 0, ROAD_RIGHT - ROAD_LEFT, GAME_HEIGHT);
-    world.fillStyle(0x333d47, 0.65).fillRect(ROAD_LEFT + 4, 0, ROAD_RIGHT - ROAD_LEFT - 8, GAME_HEIGHT);
-
-    this.roadMarks = this.add.group();
-    for (let y = -120; y < GAME_HEIGHT + 120; y += 110) {
-      [158, 272].forEach((x) => {
-        const mark = this.add.rectangle(x, y, 5, 54, 0xe7edef, 0.92).setDepth(2);
-        this.roadMarks.add(mark);
-      });
-      const curbLeft = this.add.rectangle(ROAD_LEFT - 6, y, 12, 55, 0xf3f3f0).setDepth(2);
-      const curbRight = this.add.rectangle(ROAD_RIGHT + 6, y, 12, 55, 0xf3f3f0).setDepth(2);
-      const curbLeftRed = this.add.rectangle(ROAD_LEFT - 6, y + 55, 12, 55, 0xd93b45).setDepth(2);
-      const curbRightRed = this.add.rectangle(ROAD_RIGHT + 6, y + 55, 12, 55, 0xd93b45).setDepth(2);
-      this.roadMarks.addMultiple([curbLeft, curbRight, curbLeftRed, curbRightRed]);
-    }
-
-    this.scenery = this.add.group();
-    for (let y = -90; y < GAME_HEIGHT + 100; y += 145) {
-      this.addTree(18, y);
-      this.addTree(411, y + 72);
-    }
-    this.addBillboard(15, 210);
-    this.addBillboard(414, 500);
-  }
-
-  private addTree(x: number, y: number) {
-    const shadow = this.add.circle(x + 4, y + 7, 18, 0x07150d, 0.24).setDepth(1);
-    const crown = this.add.circle(x, y, 17, 0x1a9b50).setDepth(2);
-    const light = this.add.circle(x - 6, y - 6, 8, 0x62d76e).setDepth(2);
-    [shadow, crown, light].forEach((part) => {
-      part.setData('kind', 'tree');
-      part.setData('groupY', y);
-      this.scenery.add(part);
-    });
-  }
-
-  private addBillboard(x: number, y: number) {
-    const side = x < GAME_WIDTH / 2 ? 1 : -1;
-    const board = this.add.rectangle(x + side * 5, y, 54, 30, 0x0a1118).setStrokeStyle(2, 0xff6817).setDepth(3);
-    const text = this.add.text(x + side * 5, y, 'SOLLERS', {
-      fontFamily: 'Arial Black',
-      fontSize: '8px',
-      color: '#ffffff',
-    }).setOrigin(0.5).setDepth(4);
-    const post = this.add.rectangle(x + side * 5, y + 24, 4, 22, 0x7d8989).setDepth(2);
-    [board, text, post].forEach((part) => {
-      part.setData('kind', 'billboard');
-      this.scenery.add(part);
-    });
-  }
-
   move(direction: -1 | 1) {
-    if (this.crashed || this.pausedByPlayer) return;
-    this.currentLane = Phaser.Math.Clamp(this.currentLane + direction, 0, LANE_X.length - 1);
-    this.tweens.killTweensOf(this.player);
-    this.tweens.add({ targets: this.player, x: LANE_X[this.currentLane], duration: 145, ease: 'Cubic.Out' });
+    if (this.pausedByPlayer || !this.player) return;
+    this.currentLane = clamp(this.currentLane + direction, 0, 2);
   }
-
   setPaused(paused: boolean) {
-    if (this.crashed) return;
+    if (!paused && this.lives === 0) return;
     this.pausedByPlayer = paused;
-    this.physics.world.isPaused = paused;
-    if (paused) this.tweens.pauseAll();
-    else this.tweens.resumeAll();
+    if (paused) this.tweens.pauseAll(); else this.tweens.resumeAll();
   }
-
+  continueRace() {
+    this.lives = 3;
+    this.run.ghostUntil = this.run.clock + 3;
+    this.setPaused(false);
+    this.emitHud();
+  }
   activateBoost() {
-    if (this.crashed || this.pausedByPlayer || this.boostCharge < 100) return false;
-    this.boostCharge = 0;
-    this.boostUntil = this.time.now + 4000;
-    this.cameras.main.flash(140, 64, 224, 255, false);
+    if (this.pausedByPlayer || !this.player || this.run.charge < 100) return false;
+    this.run.charge = 0; this.run.boostUntil = this.run.clock + 4;
+    this.floatingText('4H BOOST', '#2aeaf8', 570);
     return true;
   }
-
-  private spawnTraffic() {
-    const lane = Phaser.Math.Between(0, 2);
-    const nearest = this.traffic.getChildren().some((child) => {
-      const car = child as Phaser.Physics.Arcade.Image;
-      return car.getData('lane') === lane && car.y < 145;
-    });
-    if (nearest) return;
-    const texture = `traffic-${Phaser.Math.Between(0, 5)}`;
-    const car = this.traffic.create(LANE_X[lane], -105, texture) as Phaser.Physics.Arcade.Image;
-    car.setDepth(6).setData('lane', lane).setData('pace', Phaser.Math.Between(-25, 45));
-    car.body?.setSize(38, 75).setOffset(6, 10);
+  private spawnTraffic(forcedLane?: number, startY = -75) {
+    let lane = forcedLane ?? Phaser.Math.Between(0,2);
+    if (lane === this.lastLane) lane = (lane + 1 + Phaser.Math.Between(0,1)) % 3;
+    this.lastLane = lane;
+    const keys = ['blue','yellow','red','white','truck'];
+    const key = keys[Phaser.Math.Between(0,4)];
+    const sprite = this.add.image(0,0,'atlas',key);
+    const frame = this.textures.getFrame('atlas',key);
+    this.roadObjects.push({ sprite, y: startY, lane, width: key === 'truck' ? 100 : 82, ratio: frame.height/frame.width, kind: 'traffic', pace: Phaser.Math.FloatBetween(.86,1.1) });
   }
-
   private spawnBonus() {
-    const lane = Phaser.Math.Between(0, 2);
-    const box = this.bonuses.create(LANE_X[lane], -55, 'bonus-box') as Phaser.Physics.Arcade.Image;
-    box.setDepth(5).setData('lane', lane);
-    const plus = this.add.text(box.x, box.y, '+10', {
-      fontFamily: 'Arial Black',
-      fontSize: '13px',
-      color: '#c7ff83',
-      stroke: '#15361f',
-      strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(7).setData('bonusLabel', box);
-    box.setData('label', plus);
+    // A readable functional collectible, distinct from all traffic.
+    const canvas = this.textures.exists('bonus') ? null : this.textures.createCanvas('bonus',64,64);
+    if(canvas) {
+      const c=canvas.context; c.fillStyle='#b78538'; c.fillRect(8,8,48,48);
+      c.strokeStyle='#f6c765'; c.lineWidth=4;c.strokeRect(8,8,48,48);
+      c.beginPath();c.moveTo(8,8);c.lineTo(56,56);c.moveTo(56,8);c.lineTo(8,56);c.stroke();
+      c.fillStyle='#87ed88';c.font='bold 25px Arial';c.textAlign='center';c.fillText('+',32,40);canvas.refresh();
+    }
+    let lane = Phaser.Math.Between(0,2);
+    const nearby = this.roadObjects.filter(o=>o.y < 130).map(o=>o.lane);
+    lane = [0,1,2].find(l=>!nearby.includes(l)) ?? lane;
+    this.roadObjects.push({sprite:this.add.image(0,0,'bonus'),y:-60,lane,width:47,ratio:1,kind:'bonus',pace:1});
   }
-
+  private floatingText(text:string,color:string,y=530) {
+    const label = this.add.text(215,y,text,{fontFamily:'Arial',fontStyle:'bold',fontSize:'22px',color,stroke:'#08120d',strokeThickness:5}).setOrigin(.5).setDepth(1900);
+    this.tweens.add({targets:label,y:y-45,alpha:0,duration:1100,onComplete:()=>label.destroy()});
+  }
   private crash() {
-    if (this.crashed) return;
-    this.crashed = true;
-    this.player.setTint(0xff6b6b);
-    this.cameras.main.shake(330, 0.018);
-    this.physics.world.isPaused = true;
-    const score = Math.floor(this.distance / 11) + this.bonusScore;
-    this.time.delayedCall(650, () => this.options.onCrash(score));
-  }
-
-  private puffExhaust() {
-    const puff = this.add.circle(this.player.x + Phaser.Math.Between(-9, 9), this.player.y + 61, Phaser.Math.Between(4, 8), 0xdce4e6, 0.35).setDepth(4);
-    this.tweens.add({ targets: puff, y: puff.y + 34, alpha: 0, scale: 1.8, duration: 520, onComplete: () => puff.destroy() });
-  }
-
-  update(time: number, deltaMs: number) {
-    if (this.crashed || this.pausedByPlayer) return;
-    const delta = Math.min(deltaMs, 50) / 1000;
-    const boostActive = time < this.boostUntil;
-    this.worldSpeed = Math.min(420, 250 + this.distance * 0.012) + (boostActive ? 105 : 0);
-    this.distance += this.worldSpeed * delta;
-    this.spawnTimer -= deltaMs;
-    this.bonusTimer -= deltaMs;
-    this.hudTimer -= deltaMs;
-    if (!boostActive) this.boostCharge = Math.min(100, this.boostCharge + delta * 9);
-
-    if (this.spawnTimer <= 0) {
-      this.spawnTraffic();
-      this.spawnTimer = Math.max(500, 980 - this.distance * 0.015) + Phaser.Math.Between(0, 230);
+    if(this.run.clock < this.run.ghostUntil) return;
+    this.run.ghostUntil = this.run.clock + 2.8;
+    this.lives--;
+    this.combo=0;
+    this.cameras.main.shake(180,.006);
+    this.floatingText('ПРОЗРАЧНОСТЬ · 3 СЕК', '#e1f4ff');
+    this.game.events.emit('race-sound','crash');
+    if (this.lives === 0) {
+      this.setPaused(true);
+      this.emitHud();
+      this.options.onExhausted();
     }
-    if (this.bonusTimer <= 0) {
-      this.spawnBonus();
-      this.bonusTimer = Phaser.Math.Between(5600, 8000);
-    }
-
-    this.roadMarks.getChildren().forEach((child) => {
-      const mark = child as MovingObject;
-      mark.y += this.worldSpeed * delta;
-      if (mark.y > GAME_HEIGHT + 70) mark.y -= 990;
-    });
-    this.scenery.getChildren().forEach((child) => {
-      const object = child as MovingObject;
-      object.y += this.worldSpeed * 0.72 * delta;
-      if (object.y > GAME_HEIGHT + 80) object.y -= 1015;
-    });
-    this.traffic.getChildren().forEach((child) => {
-      const car = child as Phaser.Physics.Arcade.Image;
-      car.y += (this.worldSpeed * 0.74 + Number(car.getData('pace'))) * delta;
-      if (car.y > GAME_HEIGHT + 120) car.destroy();
-    });
-    this.bonuses.getChildren().forEach((child) => {
-      const box = child as Phaser.Physics.Arcade.Image;
-      box.y += this.worldSpeed * 0.9 * delta;
-      const label = box.getData('label') as Phaser.GameObjects.Text | undefined;
-      if (label) label.setPosition(box.x, box.y);
-      if (box.y > GAME_HEIGHT + 80) {
-        label?.destroy();
-        box.destroy();
+  }
+  private emitHud() {
+    this.options.onHud({score:Math.floor(this.run.distance/10)+this.bonusScore,speed:Math.round(this.speed),boost:Math.floor(this.run.charge),distance:Math.floor(this.run.distance),biome:BIOMES[biomeAt(this.run.distance)].name,ghost:this.run.clock < this.run.ghostUntil,combo:this.combo,overtakes:this.overtakes,bonuses:this.bonuses,lives:this.lives});
+  }
+  private drawRoad(dt:number, boosting:boolean) {
+    const b = BIOMES[biomeAt(this.run.distance)];
+    this.cameras.main.setBackgroundColor(b.ground);
+    this.roadTexture.tilePositionY -= this.speed * dt * 3;
+    const g=this.world;g.clear();
+    const poly=(points:{x:number;y:number}[],color:number,alpha=1)=>{g.fillStyle(color,alpha);g.fillPoints(points,true);};
+    const edge=(y:number,side:number,off=0)=>({x:215+side*(roadHalf(y)+off),y});
+    for(const side of [-1,1]) {
+      poly([edge(0,side,2),edge(0,side,14),edge(780,side,14),edge(780,side,2)],b.verge);
+      for(let i=-1;i<20;i++) {
+        const z=(i + (this.run.distance*.055)%1)/18;
+        const z2=z+1/36;
+        const y=z*z*850-40, y2=z2*z2*850-40;
+        if(y2<0||y>790) continue;
+        poly([edge(y,side),edge(y,side,5),edge(y2,side,5),edge(y2,side)],0xd8d9d0);
+        const y3=(z+1/18)**2*850-40;
+        poly([edge(y2,side),edge(y2,side,5),edge(y3,side,5),edge(y3,side)],0x9f463a);
       }
-    });
-
-    if (Math.floor(time / 130) !== Math.floor((time - deltaMs) / 130)) this.puffExhaust();
-
-    if (this.hudTimer <= 0) {
-      const score = Math.floor(this.distance / 11) + this.bonusScore;
-      this.options.onHud({
-        score,
-        speed: Math.round(82 + (this.worldSpeed - 250) * 0.32),
-        boost: Math.round(this.boostCharge),
-      });
-      this.hudTimer = 100;
+      g.lineStyle(1.5,0xf1e7ce,.7).lineBetween(215+side*61,0,215+side*227,780);
     }
+    for(let i=-1;i<20;i++) {
+      const z=(i+(this.run.distance*.033)%1)/17;
+      const y=z*z*900-60, y2=(z+.023)**2*900-60;
+      if(y2<0||y>790)continue;
+      for(const fraction of [-1/3,1/3]) {
+        const x=215+roadHalf(y)*fraction, x2=215+roadHalf(y2)*fraction;
+        poly([{x:x-1,y},{x:x+1,y},{x:x2+1.8,y:y2},{x:x2-1.8,y:y2}],0xe7e7d7,.6);
+      }
+    }
+    // Subtle wheel tracks in the asphalt material.
+    for(const lane of [0,1,2]) for(const side of [-1,1]){
+      g.lineStyle(10,0x080c0e,.07).lineBetween(laneX(lane,0)+side*12,0,laneX(lane,780)+side*27,780);
+    }
+    if(boosting) {
+      for(let i=0;i<12;i++){
+        const x=(i*103)%430, y=(i*157+this.run.clock*650)%780;
+        g.lineStyle(1,0x83e9ed,.22).lineBetween(x,y,x+(x-215)*.06,y+45);
+      }
+    }
+    for(const tree of this.trees) {
+      tree.y += (35+Math.max(0,tree.y)*.6) * dt * this.speed/100;
+      if(tree.y > 1000)tree.y=-70;
+      const scale=depthScale(tree.y);
+      tree.sprite.setPosition(215+tree.side*(roadHalf(tree.y)+tree.offset*scale),tree.y);
+      tree.sprite.setDisplaySize((88+tree.offset*.4)*scale,(110+tree.offset*.5)*scale).setDepth(tree.y+20).setTint(b.tree);
+    }
+    // Atmospheric haze at the far end of the road.
+    for(let j=0;j<8;j++){g.fillStyle(b.sky,.025*(8-j));g.fillRect(0,j*18,430,18);}
+    if(biomeAt(this.run.distance)===2) for(let i=0;i<45;i++){
+      const x=(i*97+Math.sin(this.run.clock+i)*13)%430;
+      const y=(i*51+this.run.clock*35)%780;
+      g.fillStyle(0xffffff,.55).fillCircle(x,y,i%3===0?1.7:1);
+    }
+  }
+  update(_time:number, deltaMs:number) {
+    if(this.pausedByPlayer||!this.player||this.failed)return;
+    const dt=Math.min(deltaMs,50)/1000;
+    const next=advanceRun(this.run,dt);this.run=next;this.speed=next.speed;
+    const newBiome=biomeAt(this.run.distance);
+    if(newBiome!==this.biome){if(this.biome>=0)this.floatingText(BIOMES[newBiome].name,'#ffffff',190);this.biome=newBiome;}
+    this.drawRoad(dt,next.boost);
+    this.steer += (this.currentLane-this.steer)*Math.min(1,dt*13);
+    this.player.x=laneX(this.steer,624);
+    this.player.rotation=(this.currentLane-this.steer)*.055;
+    const ghost=this.run.clock<this.run.ghostUntil;
+    this.player.setAlpha(ghost ? (.18 + (Math.sin(this.run.clock*24)+1)*.19) : 1);
+    this.spawnTimer-=dt; this.bonusTimer-=dt; this.hudTimer-=dt;
+    if(this.spawnTimer<=0){this.spawnTraffic();this.spawnTimer=Math.max(.85,1.5-this.run.distance*.00012);}
+    if(this.bonusTimer<=0){this.spawnBonus();this.bonusTimer=Phaser.Math.FloatBetween(4.8,7.2);}
+    for(const object of this.roadObjects) {
+      object.y += (68+Math.max(0,object.y)*.46) * dt * this.speed/100 * object.pace;
+      const scale=depthScale(object.y), w=object.width*scale, h=w*object.ratio;
+      const x=laneX(object.lane,object.y);
+      object.sprite.setPosition(x,object.y).setDisplaySize(w,h).setDepth(object.y);
+      if(hitTest(this.player.x,624,91,136,x,object.y,w,h)) {
+        if(object.kind==='traffic')this.crash();
+        else { this.bonuses++;this.bonusScore+=10;this.run.charge=Math.min(100,this.run.charge+10);object.y=1000;this.floatingText('+10', '#a6ff86');this.game.events.emit('race-sound','bonus'); }
+      }
+      if(object.kind==='traffic'&&!object.passed&&object.y>735){
+        object.passed=true;this.overtakes++;
+        if(!ghost) {this.combo=Math.min(5,this.combo+1);this.bonusScore+=this.combo;if(this.combo>=3)this.floatingText('ОБГОН ×'+this.combo,'#ffc05e',470);}
+      }
+    }
+    this.roadObjects=this.roadObjects.filter(object=>{if(object.y>980){object.sprite.destroy();return false;}return true;});
+    if(this.hudTimer<=0){this.emitHud();this.hudTimer=.1;}
   }
 }
