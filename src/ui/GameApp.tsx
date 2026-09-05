@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { BOY_COLORS, GIRL_COLORS, assetUrl } from '@/src/config/game';
 import type { HudState } from '@/src/game/scenes/TrafficScene';
+import { RaceAudio } from '@/src/game/RaceAudio';
+import type { RaceEvent } from '@/src/game/model';
 import { DEFAULT_STATE, loadGameState, saveGameState, type Driver } from '@/src/state/store';
 import { PhaserGame, type PhaserGameHandle } from '@/src/ui/PhaserGame';
 import { DriverAvatar, GameLogo, Icon, VehiclePreview } from '@/src/ui/Visuals';
@@ -10,9 +12,9 @@ type Screen='menu'|'driver'|'color'|'game';
 type Modal='none'|'settings'|'records'|'tasks'|'continue'|'phone'|'result';
 type Config={socialUrl:string|null;socialLabel:string;phoneReady:boolean;privacyUrl:string|null;continueMode:string};
 type Leader={name:string;score:number;distance:number};
-const EMPTY:HudState={score:0,speed:100,boost:100,distance:0,biome:'ЛЕСНАЯ ТРАССА',ghost:false,combo:0,overtakes:0,bonuses:0,lives:3};
+const EMPTY:HudState={score:0,speed:72,boost:100,distance:0,biome:'ЛЕСНАЯ ТРАССА',ghost:false,combo:0,overtakes:0,bonuses:0,lives:3,countdown:3,boosting:false,nearMisses:0};
 async function api<T=Record<string,unknown>>(path:string,body?:unknown):Promise<T>{
-  const response=await fetch(assetUrl('/api/'+path),{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});
+  const response=await fetch(assetUrl('/api/'+path),{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(6000)});
   const value=await response.json() as T & {error?:string};if(!response.ok)throw new Error(value.error||'Нет связи с сервером. Попробуйте ещё раз.');return value;
 }
 export function GameApp(){
@@ -28,22 +30,23 @@ export function GameApp(){
   const modalRef=useRef<HTMLDialogElement>(null);
   const palette=stored.driver==='boy'?BOY_COLORS:GIRL_COLORS;
   const [sound,setSound]=useState(false);
-  const audio=useRef<{ctx:AudioContext;osc:OscillatorNode;gain:GainNode}|null>(null);
+  const audio=useRef<RaceAudio|null>(null);
   const updateStored=useCallback((patch:Partial<typeof DEFAULT_STATE>)=>setStored(old=>{const next={...old,...patch};saveGameState(next);return next;}),[]);
   useEffect(()=>{
     const hydrate=window.setTimeout(()=>{setStored(loadGameState());setReady(true);},0);
     api<Config>('config').then(setConfig).catch(()=>{});
     if('serviceWorker' in navigator&&process.env.NODE_ENV==='production') navigator.serviceWorker.register(assetUrl('/sw.js')).catch(()=>{});
-    return()=>{window.clearTimeout(hydrate);audio.current?.ctx.close();};
+    return()=>{window.clearTimeout(hydrate);audio.current?.close();audio.current=null;};
   },[]);
-  useEffect(()=>{hudRef.current=hud;if(audio.current)audio.current.osc.frequency.setTargetAtTime(36+hud.speed*.35,audio.current.ctx.currentTime,.12);},[hud]);
-  useEffect(()=>{if(audio.current)audio.current.gain.gain.setTargetAtTime(sound&&screen==='game'&&!paused&&modal==='none'?.018:0,audio.current.ctx.currentTime,.1);},[sound,screen,paused,modal]);
+  useEffect(()=>{hudRef.current=hud;},[hud]);
+  useEffect(()=>{audio.current?.setState(sound,screen==='game'&&!paused&&modal==='none',hud.speed,hud.boosting);},[sound,screen,paused,modal,hud.speed,hud.boosting]);
   useEffect(()=>{
     const d=modalRef.current;if(!d)return;
     if(modal!=='none'&&!d.open)d.showModal();else if(modal==='none'&&d.open)d.close();
     setError('');
   },[modal]);
   const onHud=useCallback((value:HudState)=>setHud(value),[]);
+  const onSound=useCallback((event:RaceEvent['type'])=>audio.current?.play(event),[]);
   const onExhausted=useCallback(()=>{setPaused(true);setModal('continue');setSocialOpened(false);},[]);
   const pause=useCallback(()=>{
     if(screen!=='game'||modal!=='none')return;
@@ -65,8 +68,8 @@ export function GameApp(){
     return()=>{window.removeEventListener('keydown',key);document.removeEventListener('visibilitychange',hidden);};
   },[screen,modal,pause,boost]);
   const initAudio=()=>{
-    if(!audio.current)try{const ctx=new AudioContext(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sawtooth';gain.gain.value=0;osc.connect(gain).connect(ctx.destination);osc.start();audio.current={ctx,osc,gain};}catch{}
-    audio.current?.ctx.resume().catch(()=>{});
+    if(!audio.current)try{audio.current=new RaceAudio();}catch{}
+    void audio.current?.resume();
   };
   const start=async()=>{
     initAudio();setBusy(true);setError('');session.current=null;
@@ -127,12 +130,16 @@ export function GameApp(){
         </>}
         <div className="setup-steps"><i className="active"/><i className={screen==='color'?'active':''}/><span>{screen==='driver'?'01 / ВОДИТЕЛЬ':'02 / ВАШ ST9'}</span></div>
       </div>}
-      {screen==='game'&&<div className="screen game-screen">
-        <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted}/>
+      {screen==='game'&&<div className={`screen game-screen ${hud.boosting?'is-boosting':''}`}>
+        <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted} onSound={onSound}/>
         <div className="race-hud"><div><span>СЧЁТ</span><strong>{String(hud.score).padStart(4,'0')}</strong></div><div><span>СКОРОСТЬ</span><strong className="orange-text">{hud.speed}<small> КМ/Ч</small></strong></div><div><span>РЕКОРД</span><strong>{String(Math.max(stored.bestScore,hud.score)).padStart(4,'0')}</strong></div><button className="pause-button" aria-label="Пауза" onClick={pause}><Icon name="pause"/></button></div>
         <div className="race-status"><span className="lives" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><b key={n} className={n<=hud.lives?'':'lost'}>♥</b>)}</span><span>{hud.biome}</span><span>{(hud.distance/1000).toFixed(1)} КМ</span></div>
+        <div className="route-progress" aria-label={`До следующего участка ${750-hud.distance%750} метров`}><i style={{width:`${hud.distance%750/7.5}%`}}/></div>
+        <button className="race-audio" onClick={()=>{initAudio();setSound(!sound);}} aria-label={sound?'Выключить звук':'Включить звук'} aria-pressed={sound}><Icon name={sound?'sound':'mute'} size={18}/></button>
         {hud.ghost&&hud.lives>0&&<div className="ghost-badge">ЗАЩИТА ПОСЛЕ УДАРА</div>}
-        <div className="race-controls"><button className={`boost-button ${hud.boost===100?'ready':''}`} style={{'--boost':hud.boost+'%'} as CSSProperties} onClick={boost} aria-label="Активировать ускорение" disabled={hud.boost<100||paused}><strong>4H</strong><span>BOOST</span>{hud.boost<100&&<small>{hud.boost}%</small>}</button><div className="steering"><button aria-label="Перестроиться влево" onClick={()=>game.current?.move(-1)}>‹</button><button aria-label="Перестроиться вправо" onClick={()=>game.current?.move(1)}>›</button></div></div>
+        {!hud.ghost&&hud.combo>=2&&<div className="combo-badge"><b>×{hud.combo}</b><span>СЕРИЯ ОБГОНОВ</span></div>}
+        {hud.countdown>0&&<div className="race-countdown" role="status"><span>{hud.distance>0?'ВОЗВРАЩАЕМСЯ НА ТРАССУ':'ПРИСТЕГНИТЕСЬ'}</span><strong key={hud.countdown}>{hud.countdown}</strong><p>Свайп или ← → — сменить полосу</p><div><i/><i/><i/></div></div>}
+        <div className="race-controls"><button className={`boost-button ${hud.boost===100?'ready':''}`} style={{'--boost':hud.boost+'%'} as CSSProperties} onClick={boost} aria-label="Активировать ускорение" disabled={hud.boost<100||paused||hud.countdown>0}><strong>4H</strong><span>BOOST</span>{hud.boost<100&&<small>{hud.boost}%</small>}</button><div className="steering"><button aria-label="Перестроиться влево" onClick={()=>game.current?.move(-1)}>‹</button><button aria-label="Перестроиться вправо" onClick={()=>game.current?.move(1)}>›</button></div></div>
         {paused&&modal==='none'&&<div className="pause-overlay"><span className="eyebrow">ПЕРЕВЕДИТЕ ДУХ</span><h2>ПАУЗА</h2><button className="button green" onClick={pause}>ПРОДОЛЖИТЬ</button><button className="text-button" onClick={finish}>ЗАВЕРШИТЬ ЗАЕЗД</button></div>}
       </div>}
       <dialog ref={modalRef} className="modal-card" onCancel={event=>{event.preventDefault();closeModal();}}>

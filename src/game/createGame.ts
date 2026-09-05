@@ -4,23 +4,19 @@ import { TrafficScene, type TrafficSceneOptions } from '@/src/game/scenes/Traffi
 
 export function createTrafficGame(parent: HTMLElement, options: TrafficSceneOptions) {
   return new Phaser.Game({
-    type: Phaser.CANVAS,
+    type: Phaser.AUTO,
     parent,
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#173d29',
     transparent: false,
-    physics: {
-      default: 'arcade',
-      arcade: { debug: false },
-    },
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     render: {
       antialias: true,
-      roundPixels: true,
+      roundPixels: false,
       powerPreference: 'high-performance',
     },
     scene: [new TrafficScene(options)],

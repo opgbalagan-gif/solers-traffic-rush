@@ -28,3 +28,31 @@
 @media(max-height:700px){.experience-shell{padding:15px}.phone-frame{min-height:570px;height:calc(100svh - 55px)}.menu-screen{padding-top:42px}.menu-hero{margin-top:4px}.menu-actions .button{min-height:42px}.vehicle-card{margin-top:13px;padding:10px}.bottom-nav{margin-top:10px}.driver-grid{margin-top:24px}.setup-next{margin-top:24px}.screen-header h1{font-size:24px}.outside-help{display:none}.color .setup-next{margin-top:14px}.paint-name{margin-top:11px}.garage-preview{margin-top:15px}.phone-frame .stat-bars em{font-size:11px}}
 @media(max-width:650px) and (max-height:700px){.experience-shell{padding:0}.phone-frame{height:100svh;min-height:540px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
+
+/* Race presentation: calm chrome, readable telemetry and clear action feedback. */
+.race-hud{background:linear-gradient(140deg,#0a1419eb,#101f22d9);box-shadow:0 6px 20px #0005;border-color:#d2e7e324;top:12px}
+.race-hud strong{font-variant-numeric:tabular-nums;font-size:30px}
+.race-hud>div+div{border-left:1px solid #b0c1c11f;padding-left:10px}
+.race-status{top:90px;font-size:12px;letter-spacing:.06em}
+.lives b{transition:color .18s,transform .18s;filter:drop-shadow(0 2px 3px #0007)}
+.lives b.lost{transform:scale(.78)}
+.route-progress{position:absolute;top:121px;left:20px;right:20px;height:2px;background:#d2e3d930;z-index:20;overflow:hidden}
+.route-progress i{display:block;height:100%;background:#d4dca2;box-shadow:0 0 8px #c5ffc0;transition:width .15s linear}
+.race-audio{position:absolute;right:19px;top:136px;z-index:21;width:35px;height:35px;border:1px solid #c1d1ce38;border-radius:50%;display:grid;place-items:center;background:#0b1b20a6;color:#d7e3e6;backdrop-filter:blur(5px)}
+.race-countdown{position:absolute;z-index:24;inset:155px 0 160px;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;text-shadow:0 3px 14px #000a}
+.race-countdown>span{font:700 16px 'Barlow Condensed',Arial,sans-serif;letter-spacing:.12em;color:#e7ebe3}
+.race-countdown strong{font:800 112px/1.2 'Barlow Condensed',Arial,sans-serif;color:#fff5da;animation:count-in .8s ease-out both}
+.race-countdown p{font-size:13px;color:#e4eadd;line-height:1.6;padding:6px 13px;border-radius:20px;background:#081516ad}
+.race-countdown>div{display:flex;gap:8px;margin-top:22px}
+.race-countdown i{width:6px;height:6px;border-radius:50%;background:#ff9229;box-shadow:0 0 10px #ff7e1a}
+@keyframes count-in{from{transform:scale(1.2);opacity:0}20%{opacity:1}to{transform:scale(1);opacity:1}}
+.combo-badge{position:absolute;left:20px;top:139px;z-index:20;display:flex;gap:8px;align-items:center;color:#ffcf83;text-shadow:0 2px 4px #000;background:#08141999;padding:5px 9px;border:1px solid #ffbf602c;border-radius:7px}
+.combo-badge b{font:700 24px/1 'Rajdhani',Arial,sans-serif}
+.combo-badge span{font:600 11px 'Barlow Condensed',Arial,sans-serif;letter-spacing:.07em}
+.ghost-badge{top:140px;left:20px;transform:none;border-radius:7px;font:600 12px 'Barlow Condensed',Arial,sans-serif;letter-spacing:.05em}
+.game-screen:after{content:'';position:absolute;inset:0;pointer-events:none;border:2px solid transparent;z-index:18;transition:box-shadow .4s,border-color .4s}
+.game-screen.is-boosting:after{border-color:#25d9f22c;box-shadow:inset 0 0 38px #20c8ee24}
+.steering button{width:56px;height:56px;background:linear-gradient(#142730b0,#071720ba);box-shadow:0 4px 14px #0004;color:#d9e8ea}
+.boost-button{width:92px;height:92px}
+@media(max-width:360px){.race-hud strong{font-size:25px}.race-hud>div+div{padding-left:6px}.race-countdown p{font-size:12px}.race-controls{left:13px;right:13px}.steering button{width:50px;height:50px}}
+@media(prefers-reduced-motion:reduce){.race-countdown strong{animation:none}.route-progress i,.game-screen:after{transition:none}}

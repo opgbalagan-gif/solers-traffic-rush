@@ -1,31 +1,124 @@
 import assert from 'node:assert/strict';
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
-const modelJS=ts.transpile(readFileSync('src/game/model.ts','utf8'),{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020});
-const mod={exports:{}};new Function('exports','module',modelJS)(mod.exports,mod);const model=mod.exports;
-assert.equal(model.biomeAt(0),0);assert.equal(model.biomeAt(750),1);assert.equal(model.biomeAt(1500),2);assert.equal(model.biomeAt(2250),0);
-assert(model.laneX(0,624)<model.laneX(1,624));assert(model.laneX(2,624)<430);
-assert(model.roadHalf(780)>model.roadHalf(0));
-let state={clock:0,distance:0,charge:100,boostUntil:0,ghostUntil:0};
-for(let i=0;i<1200;i++)state=model.advanceRun(state,.05);
-assert(state.distance>1500&&state.distance<2500);assert(state.charge===100);
-const normal=model.advanceRun({clock:0,distance:0,charge:0,boostUntil:0,ghostUntil:0},.05);
-const boosted=model.advanceRun({clock:0,distance:0,charge:0,boostUntil:4,ghostUntil:0},.05);
-assert(boosted.speed>normal.speed);assert.equal(boosted.charge,0);
-assert(model.hitTest(200,624,100,150,220,630,90,120));assert(!model.hitTest(100,624,100,150,300,624,90,120));
-let sceneSource=readFileSync('src/game/scenes/TrafficScene.ts','utf8').replace(/^import .*;\r?\n/gm,'').replace('export class TrafficScene','class TrafficScene');
-const sceneJS=ts.transpile(sceneSource,{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.None}).replace(/export \{\};?/g,'');
-const Scene=new Function('exports','Phaser','assetUrl','PAINT_FILTERS',...Object.keys(model),sceneJS+';return TrafficScene;')({}, {Scene:class{}},x=>x,{},...Object.values(model));
-let exhausted=0,lastHud;
-const scene=new Scene({carColor:'#10161d',onHud:h=>lastHud=h,onExhausted:()=>exhausted++,onReady:()=>{},onError:()=>{}});
-scene.cameras={main:{shake:()=>{}}};scene.game={events:{emit:()=>{}}};scene.tweens={pauseAll:()=>{},resumeAll:()=>{}};
-scene.floatingText=()=>{};scene.player={};scene.run.clock=1;
-scene.crash();assert.equal(scene.lives,2);assert.equal(scene.run.ghostUntil,3.8);
-scene.crash();assert.equal(scene.lives,2,'No double damage during invincibility');
-scene.run.clock=4;scene.crash();assert.equal(scene.lives,1);
-scene.run.clock=7;scene.crash();assert.equal(scene.lives,0);assert.equal(exhausted,1);assert(scene.pausedByPlayer);assert.equal(lastHud.lives,0);
-scene.setPaused(false);assert(scene.pausedByPlayer,'Cannot bypass exhausted lives with pause button');
-const frozen=JSON.stringify(scene.run);scene.update(9000,50);assert.equal(JSON.stringify(scene.run),frozen,'All gameplay clocks freeze during the gate');
-scene.continueRace();assert.equal(scene.lives,3);assert(!scene.pausedByPlayer);assert(scene.run.ghostUntil>scene.run.clock);
-scene.run.charge=100;assert(scene.activateBoost());assert(!scene.activateBoost());scene.setPaused(true);assert(!scene.activateBoost());
-console.log('PASS: perspective, biomes, speed, boost, collision, three lives, invincibility, pause and continuation.');
+
+const js = ts.transpile(readFileSync('src/game/model.ts', 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 });
+const modelModule = { exports: {} };
+new Function('exports', 'module', js)(modelModule.exports, modelModule);
+const { RaceSimulation, projectRoad, biomeAt, planWave, laneWorldX, vehicleContact } = modelModule.exports;
+const seeded = (seed = 123) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+const advance = (race, seconds, fps = 60) => { const events = []; for (let i = 0; i < seconds * fps; i++) events.push(...race.step(1 / fps)); return events; };
+const emptyRace = () => { const race = new RaceSimulation(seeded()); race.vehicles = []; race.nextWave = 99999; race.nextBonus = 99999; return race; };
+
+assert.equal(biomeAt(0), 0); assert.equal(biomeAt(750), 1); assert.equal(biomeAt(1500), 2); assert.equal(biomeAt(2250), 0);
+const near = projectRoad(0), far = projectRoad(60);
+assert(near.y > far.y && near.scale > far.scale, 'Perspective shrinks objects consistently with distance');
+assert.equal(projectRoad(0, 0, 731).x, 215, 'Road remains centred under the player on curves');
+for (let distance = 0; distance < 4000; distance += 5) for (let z = -1.5; z < 160; z += 2) {
+  const p = projectRoad(z, 0, distance);
+  assert(Number.isFinite(p.x) && Number.isFinite(p.y) && p.scale > 0);
+}
+assert(projectRoad(0, laneWorldX(0)).x > 45 && projectRoad(0, laneWorldX(2)).x < 385);
+const visualRace = new RaceSimulation(seeded());
+const distantCar = visualRace.spawn(1, 3, 'red');
+assert(!vehicleContact(0, 0, distantCar).touching, 'Separated visible bumpers must not collide');
+distantCar.z = 0;
+assert(vehicleContact(0, 0, distantCar).touching, 'Overlapping body footprints collide');
+
+const countdown = emptyRace();
+advance(countdown, 2);
+assert.equal(countdown.state.distance, 0);
+assert(!countdown.boost(), 'Boost cannot be consumed before the start');
+countdown.setPaused(true);
+const frozenCountdown = countdown.countdown;
+advance(countdown, 10);
+assert.equal(countdown.countdown, frozenCountdown);
+countdown.setPaused(false);
+const startEvents = advance(countdown, 2);
+assert.equal(startEvents.filter(e => e.type === 'start').length, 1);
+assert(countdown.state.distance > 0);
+
+const thirty = emptyRace(), sixty = emptyRace(), oneTwenty = emptyRace();
+for (const [race, fps] of [[thirty, 30], [sixty, 60], [oneTwenty, 120]]) {
+  race.move(1); advance(race, 23, fps);
+}
+assert(Math.abs(thirty.state.distance - sixty.state.distance) < .03, 'Frame-rate independent distance');
+assert(Math.abs(oneTwenty.x - sixty.x) < .001, 'Frame-rate independent steering');
+assert(Math.abs(sixty.x - laneWorldX(2)) < .001);
+
+const damage = emptyRace(); damage.countdown = 0;
+const hit1 = damage.spawn(1, 0, 'red');
+damage.step(1 / 60); assert.equal(damage.state.lives, 2); assert(hit1.hit);
+advance(damage, .2); assert.equal(damage.state.lives, 2, 'Overlapping frames do not repeat damage');
+damage.spawn(1, 0, 'white'); damage.step(1 / 60);
+assert.equal(damage.state.lives, 2, 'A different car during protection does not remove a life');
+damage.vehicles = []; advance(damage, 3);
+damage.spawn(1, 0, 'red'); damage.step(1 / 60); assert.equal(damage.state.lives, 1);
+damage.vehicles = []; advance(damage, 3);
+damage.spawn(1, 0, 'blue');
+const stopEvents = damage.step(1 / 60);
+assert.equal(damage.state.lives, 0); assert(damage.paused);
+assert.equal(stopEvents.filter(e => e.type === 'exhausted').length, 1);
+damage.setPaused(false); assert(damage.paused, 'Pause cannot bypass the continuation gate');
+const before = JSON.stringify(damage.state);
+advance(damage, 20); assert.equal(JSON.stringify(damage.state), before);
+assert(damage.continueRace()); assert.equal(damage.state.lives, 3); assert(!damage.paused);
+assert.equal(damage.state.score, JSON.parse(before).score, 'Continuation retains the score');
+assert(damage.state.ghostUntil > damage.state.clock);
+assert(!damage.continueRace(), 'Continuation cannot reset a healthy run');
+
+const boost = emptyRace(); boost.countdown = 0;
+assert(boost.boost()); assert(!boost.boost());
+advance(boost, 2); assert(boost.state.speed > 140); assert.equal(boost.state.charge, 0);
+boost.setPaused(true); const boostClock = boost.state.clock; advance(boost, 3); assert.equal(boost.state.clock, boostClock);
+boost.setPaused(false); advance(boost, 3); assert(boost.state.charge > 0);
+assert(boost.state.clock > boost.state.boostUntil);
+
+const bonus = emptyRace(); bonus.countdown = 0; bonus.state.charge = 50;
+bonus.spawn(1, 0, 'bonus');
+const pickup = bonus.step(1 / 60);
+assert.equal(bonus.state.bonuses, 1); assert.equal(bonus.state.score, 10);
+assert(bonus.state.charge >= 62); assert.equal(pickup.filter(e => e.type === 'bonus').length, 1);
+advance(bonus, .2); assert.equal(bonus.state.bonuses, 1);
+
+const reward = emptyRace(); reward.countdown = 0;
+const damagedCar = reward.spawn(1, 0, 'red'); reward.step(1 / 60);
+damagedCar.z = -5; reward.state.ghostUntil = 0; reward.step(1 / 60);
+assert.equal(reward.state.combo, 0, 'A collided car never earns a clean-pass reward');
+const closeCar = reward.spawn(1, 0, 'white'); closeCar.x = 2;
+reward.step(1 / 120); closeCar.z = -5;
+const nearEvents = reward.step(1 / 120);
+assert(nearEvents.some(e => e.type === 'near')); assert.equal(reward.state.nearMisses, 1);
+
+const rng = seeded(983); let gap = 1;
+for (let i = 0; i < 10000; i++) {
+  const wave = planWave(i, gap, rng);
+  assert(wave.lanes.length <= 2);
+  assert(!wave.lanes.includes(wave.gap));
+  assert(Math.abs(wave.gap - gap) <= 1, 'Open passage never jumps across two lanes at once');
+  gap = wave.gap;
+}
+
+// Long deterministic drives check bounded object counts and physical stability.
+let maxObjects = 0;
+for (let seed = 1; seed <= 12; seed++) {
+  const race = new RaceSimulation(seeded(seed));
+  for (let frame = 0; frame < 60 * 180; frame++) {
+    if (race.paused) race.continueRace();
+    if (frame % 12 === 0 && race.countdown === 0) {
+      const threats = race.vehicles.filter(v => v.kind !== 'bonus' && v.z > -4 && v.z < 24);
+      const choices = [0, 1, 2].map(lane => ({ lane, danger: threats.reduce((sum, v) => sum + (Math.abs(v.x - laneWorldX(lane)) < 2.1 ? 30 - v.z : 0), 0) + Math.abs(lane - race.lane) * .4 }));
+      choices.sort((a, b) => a.danger - b.danger);
+      if (choices[0].lane !== race.lane) race.move(choices[0].lane > race.lane ? 1 : -1);
+    }
+    race.step(1 / 60);
+    maxObjects = Math.max(maxObjects, race.vehicles.length);
+    assert(Number.isFinite(race.state.distance) && Number.isFinite(race.x));
+    assert(race.state.lives >= 0 && race.state.lives <= 3);
+    assert(race.state.charge >= 0 && race.state.charge <= 100);
+  }
+  assert(race.state.distance > 4500, 'Playable multi-biome drive');
+  assert(race.state.score <= 180 * 18 + 30, 'Legitimate upgraded scoring satisfies the server time budget');
+}
+assert(maxObjects < 30, 'Traffic does not accumulate without bound');
+console.log('PASS: projection and curves, countdown, 30/60/120 fps consistency, three lives, invincibility, pause, continuation, boost, pickups, clean-pass scoring, 10,000 fair wave layouts and 12 simulated three-minute drives.');
