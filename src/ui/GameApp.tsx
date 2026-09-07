@@ -10,6 +10,7 @@ import { DriverAvatar, GameLogo, Icon, VehiclePreview } from '@/src/ui/Visuals';
 import { gameApi as api } from '@/src/lib/gameApi';
 import { RaceStartOverlay, type RacePhase } from '@/src/ui/RaceStartOverlay';
 import { ControlIcon, DrivingGuide } from '@/src/ui/DrivingGuide';
+import { NitroMeter } from '@/src/ui/NitroMeter';
 
 type Screen='menu'|'driver'|'color'|'garage'|'game';
 type Modal='none'|'settings'|'records'|'tasks'|'continue'|'phone'|'result';
@@ -156,7 +157,10 @@ export function GameApp(){
       {screen==='game'&&<div className={`screen game-screen ${racePhase!=='race'||paused?'is-preparing':''} ${hud.boosting?'is-boosting':''}`}>
         <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted} onSound={onSound} onReady={onGameReady} onError={onGameError}/>
         {racePhase==='race'&&!paused&&modal==='none'&&<div className="race-corner">
-          {hud.countdown===0&&<div className="race-hearts" role="status" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><span key={n} aria-hidden="true" className={n<=hud.lives?'':'lost'}>♥</span>)}</div>}
+          {hud.countdown===0&&<div className="race-vitals">
+            <div className="race-hearts" role="status" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><span key={n} aria-hidden="true" className={n<=hud.lives?'':'lost'}>♥</span>)}</div>
+            <NitroMeter charge={hud.boost} active={hud.boosting}/>
+          </div>}
           <button className="race-pause-button" type="button" aria-label="Пауза" title="Пауза" onPointerDown={event=>event.stopPropagation()} onClick={pause}><ControlIcon name="pause" size={22}/></button>
         </div>}
         <RaceStartOverlay phase={racePhase} countdown={hud.countdown} paused={paused||modal!=='none'} onBegin={beginRace} onRetry={retryLoading}/>
