@@ -12,7 +12,7 @@
     "build:vite": "vinext build",
     "start": "node scripts/local-server.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node scripts/test-game.mjs && node scripts/test-api.mjs && node scripts/test-google-sheets.mjs"
+    "test": "node scripts/test-game.mjs && node scripts/test-presentation.mjs && node scripts/test-api.mjs && node scripts/test-google-sheets.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

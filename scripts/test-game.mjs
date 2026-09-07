@@ -38,6 +38,23 @@ const startEvents = advance(countdown, 2);
 assert.equal(startEvents.filter(e => e.type === 'start').length, 1);
 assert(countdown.state.distance > 0);
 
+const waiting = new RaceSimulation(seeded(), { waitForStart: true });
+const parkedTraffic = JSON.stringify(waiting.vehicles);
+waiting.move(1); waiting.setPaused(false);
+assert(!waiting.boost());
+assert.deepEqual(advance(waiting, 60), [], 'Loading and reading rules produce no race events');
+assert.equal(waiting.countdown, 3, 'Reading rules never consumes the countdown');
+assert.equal(waiting.state.distance, 0);
+assert.equal(waiting.lane, 1);
+assert.equal(JSON.stringify(waiting.vehicles), parkedTraffic, 'Traffic waits behind the start screen');
+assert(waiting.beginRace());
+assert(!waiting.beginRace(), 'Repeated start presses cannot restart the race');
+advance(waiting, 1.1); assert.equal(Math.ceil(waiting.countdown), 2);
+advance(waiting, 1); assert.equal(Math.ceil(waiting.countdown), 1);
+assert.equal(advance(waiting, 1).filter(event => event.type === 'start').length, 1);
+assert.equal(waiting.countdown, 0);
+assert(waiting.state.distance > 0);
+
 const thirty = emptyRace(), sixty = emptyRace(), oneTwenty = emptyRace();
 for (const [race, fps] of [[thirty, 30], [sixty, 60], [oneTwenty, 120]]) {
   race.move(1); advance(race, 23, fps);

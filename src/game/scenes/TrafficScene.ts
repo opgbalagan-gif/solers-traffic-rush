@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { assetUrl } from '@/src/config/game';
-import { PAINT_FILTERS } from '@/src/ui/Visuals';
+import { repaintBody } from '@/src/game/paint';
 import { BIOMES, RaceSimulation, biomeAt, type RaceEvent } from '@/src/game/model';
 import { RoadRenderer } from '@/src/game/RoadRenderer';
 import { RaceGestures } from '@/src/game/RaceGestures';
@@ -30,7 +30,7 @@ const SCENERY: [string, number, number, number, number][] = [
 
 export class TrafficScene extends Phaser.Scene {
   private options: TrafficSceneOptions;
-  private simulation = new RaceSimulation();
+  private simulation = new RaceSimulation(Math.random, { waitForStart: true });
   private player!: Phaser.GameObjects.Image;
   private playerGlow!: Phaser.GameObjects.Image;
   private roadView!: RoadRenderer;
@@ -59,11 +59,12 @@ export class TrafficScene extends Phaser.Scene {
     if (this.failed || !this.textures.exists('atlas') || !this.textures.exists('scenery')) return;
     FRAMES.forEach(([name, x, y, w, h]) => this.textures.get('atlas').add(name, 0, x, y, w, h));
     SCENERY.forEach(([name, x, y, w, h]) => this.textures.get('scenery').add(name, 0, x, y, w, h));
-    const selected = this.options.carColor === '#10161d' ? 'pickup-black' : 'pickup-pink';
-    const source = this.textures.getFrame('atlas', selected);
+    const source = this.textures.getFrame('atlas', 'pickup-pink');
     const paint = this.textures.createCanvas('player-paint', source.width, source.height)!;
-    paint.context.filter = this.options.carColor === '#10161d' ? 'none' : (PAINT_FILTERS[this.options.carColor] || 'none');
     paint.context.drawImage(this.textures.get('atlas').getSourceImage() as HTMLImageElement, source.cutX, source.cutY, source.cutWidth, source.cutHeight, 0, 0, source.width, source.height);
+    const pixels = paint.context.getImageData(0, 0, source.width, source.height);
+    repaintBody(pixels.data, this.options.carColor);
+    paint.context.putImageData(pixels, 0, 0);
     paint.refresh();
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.roadView = new RoadRenderer(this);
@@ -91,6 +92,12 @@ export class TrafficScene extends Phaser.Scene {
   }
 
   move(direction: -1 | 1) { this.simulation.move(direction); }
+
+  beginRace() {
+    if (!this.player || this.failed || !this.simulation.beginRace()) return;
+    this.setPaused(false);
+    this.emitHud();
+  }
 
   setPaused(paused: boolean) {
     this.gestures.cancel();
@@ -126,7 +133,7 @@ export class TrafficScene extends Phaser.Scene {
   private event(event: RaceEvent) {
     this.options.onSound?.(event.type);
     switch (event.type) {
-      case 'start': this.roadView.notify('ПОЕХАЛИ', 'ДЕРЖИТЕ ТРАССУ', '#f6f8f0'); break;
+      case 'start': this.emitHud(); this.roadView.notify('ПОЕХАЛИ', 'ДЕРЖИТЕ ТРАССУ', '#f6f8f0'); break;
       case 'boost': this.roadView.notify('АЗОТ', '', '#6df2ff'); break;
       case 'boost-ready': this.roadView.notify('АЗОТ ГОТОВ', 'УДЕРЖИВАЙТЕ ЭКРАН', '#6df2ff'); break;
       case 'crash':

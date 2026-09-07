@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { assetUrl } from '@/src/config/game';
+import { repaintBody } from '@/src/game/paint';
 
 // Display selected regions of the original, unmodified user-supplied concept sheets.
 export function ConceptArt({ pink = false, crop, className = '', label, filter }: {
@@ -18,17 +20,26 @@ export function GameLogo({ small = false }: { small?: boolean }) {
 export function DriverAvatar({ driver }: { driver: 'boy' | 'girl' }) {
   return <ConceptArt crop={driver === 'boy' ? [461, 143, 145, 260] : [633, 147, 133, 258]} className="driver-avatar" label={driver === 'boy' ? 'Водитель в чёрном худи SOLLERS' : 'Водитель в кепке SOLLERS'} />;
 }
-export const PAINT_FILTERS: Record<string, string> = {
-  '#ee5b9e': 'none', '#e91670': 'saturate(1.6)', '#f3a9d0': 'saturate(.55) brightness(1.17)',
-  '#b483dd': 'hue-rotate(52deg) saturate(.65)', '#76dac7': 'hue-rotate(190deg) saturate(.65)',
-  '#7ebce8': 'hue-rotate(270deg) saturate(.6)', '#f58b72': 'hue-rotate(42deg) saturate(.8)',
-  '#e8edf0': 'grayscale(1) brightness(1.6)', '#edf0f2': 'grayscale(1) brightness(1.6)',
-  '#b91f31': 'hue-rotate(25deg) saturate(1.45) brightness(.8)', '#1748a3': 'hue-rotate(285deg) saturate(1.3) brightness(.65)',
-  '#7f8b94': 'grayscale(1) brightness(.85)', '#687446': 'hue-rotate(105deg) saturate(.4) brightness(.8)',
-};
 export function VehiclePreview({ color, hero = false }: { color: string; hero?: boolean }) {
-  const pink = color !== '#10161d';
-  return <ConceptArt pink={pink} crop={hero ? (pink ? [11, 140, 407, 240] : [10, 146, 401, 233]) : (pink ? [843, 130, 395, 220] : [833, 137, 361, 207])} label="Пикап SOLLERS ST9" className={hero ? 'hero-art' : 'vehicle-preview'} filter={pink ? PAINT_FILTERS[color] : undefined} />;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      const canvas = canvasRef.current;
+      if (cancelled || !canvas) return;
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      repaintBody(pixels.data, color, 'blue');
+      context.putImageData(pixels, 0, 0);
+    };
+    image.src = assetUrl('/art/st9-dealer.png');
+    return () => { cancelled = true; };
+  }, [color]);
+  return <canvas ref={canvasRef} width={1148} height={764} role="img" aria-label="Пикап SOLLERS ST9 в выбранном цвете" className={`vehicle-render ${hero ? 'hero-art' : 'vehicle-preview'}`} />;
 }
 export function Icon({ name, size = 24 }: { name: 'settings' | 'back' | 'close' | 'trophy' | 'garage' | 'tasks' | 'pause' | 'sound' | 'mute'; size?: number }) {
   const paths: Record<string, React.ReactNode> = {

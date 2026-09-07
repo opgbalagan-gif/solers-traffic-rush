@@ -66,9 +66,12 @@ export class RaceSimulation {
   private boostHeld = false;
   private boostActive = false;
   private boostDepleted = false;
+  private awaitingStart: boolean;
 
-  constructor(random = Math.random) {
+  constructor(random = Math.random, { waitForStart = false } = {}) {
     this.random = random;
+    this.awaitingStart = waitForStart;
+    this.paused = waitForStart;
     this.spawn(0, 24, 'blue', 13);
     this.spawn(2, 40, 'truck', 13);
     this.spawn(1, 64, 'yellow', 14);
@@ -91,9 +94,16 @@ export class RaceSimulation {
   }
 
   setPaused(paused: boolean) {
-    if (!paused && this.state.lives === 0) return;
+    if (!paused && (this.state.lives === 0 || this.awaitingStart)) return;
     this.paused = paused;
     if (paused) this.setBoostHeld(false);
+  }
+
+  beginRace() {
+    if (!this.awaitingStart) return false;
+    this.awaitingStart = false;
+    this.paused = false;
+    return true;
   }
 
   continueRace() {

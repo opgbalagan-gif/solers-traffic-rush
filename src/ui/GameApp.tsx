@@ -8,6 +8,7 @@ import { DEFAULT_STATE, loadGameState, saveGameState, type Driver } from '@/src/
 import { PhaserGame, type PhaserGameHandle } from '@/src/ui/PhaserGame';
 import { DriverAvatar, GameLogo, Icon, VehiclePreview } from '@/src/ui/Visuals';
 import { gameApi as api } from '@/src/lib/gameApi';
+import { RaceStartOverlay, type RacePhase } from '@/src/ui/RaceStartOverlay';
 
 type Screen='menu'|'driver'|'color'|'garage'|'game';
 type Modal='none'|'settings'|'records'|'tasks'|'continue'|'phone'|'result';
@@ -19,6 +20,7 @@ export function GameApp(){
   const [screen,setScreen]=useState<Screen>('menu'),[modal,setModal]=useState<Modal>('none');
   const [stored,setStored]=useState(DEFAULT_STATE),[hud,setHud]=useState(EMPTY),[paused,setPaused]=useState(false);
   const [runId,setRunId]=useState(0),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [racePhase,setRacePhase]=useState<RacePhase>('loading');
   const [leaderboard,setLeaderboard]=useState<Leader[]>([]),[leaderLoading,setLeaderLoading]=useState(false);
   const [name,setName]=useState(''),[phone,setPhone]=useState(''),[consent,setConsent]=useState(false);
   const [continuations,setContinuations]=useState(0),[socialOpened,setSocialOpened]=useState(false),[saved,setSaved]=useState(false);
@@ -36,7 +38,7 @@ export function GameApp(){
     return()=>{window.clearTimeout(hydrate);audio.current?.close();audio.current=null;};
   },[]);
   useEffect(()=>{hudRef.current=hud;},[hud]);
-  useEffect(()=>{audio.current?.setState(sound,screen==='game'&&!paused&&modal==='none',hud.speed,hud.boosting);},[sound,screen,paused,modal,hud.speed,hud.boosting]);
+  useEffect(()=>{audio.current?.setState(sound,screen==='game'&&racePhase==='race'&&!paused&&modal==='none',hud.speed,hud.boosting);},[sound,screen,racePhase,paused,modal,hud.speed,hud.boosting]);
   useEffect(()=>{
     const d=modalRef.current;if(!d)return;
     if(modal!=='none'&&!d.open)d.showModal();else if(modal==='none'&&d.open)d.close();
@@ -45,14 +47,16 @@ export function GameApp(){
   const onHud=useCallback((value:HudState)=>setHud(value),[]);
   const onSound=useCallback((event:RaceEvent['type'])=>audio.current?.play(event),[]);
   const onExhausted=useCallback(()=>{setPaused(true);setModal('continue');setSocialOpened(false);},[]);
+  const onGameReady=useCallback(()=>setRacePhase('rules'),[]);
+  const onGameError=useCallback(()=>setRacePhase('error'),[]);
   const pause=useCallback(()=>{
-    if(screen!=='game'||modal!=='none')return;
+    if(screen!=='game'||racePhase!=='race'||modal!=='none')return;
     setPaused(p=>{game.current?.setPaused(!p);return !p;});
-  },[screen,modal]);
+  },[screen,racePhase,modal]);
   const boost=useCallback((held:boolean)=>{game.current?.boost(held);},[]);
   useEffect(()=>{
     const key=(event:KeyboardEvent)=>{
-      if(screen!=='game'||modal!=='none'||(event.target as HTMLElement).matches('input,textarea,select,[contenteditable="true"]'))return;
+      if(screen!=='game'||racePhase!=='race'||modal!=='none'||(event.target as HTMLElement).matches('input,textarea,select,[contenteditable="true"]'))return;
       if(['ArrowLeft','ArrowRight',' ','a','d','A','D','Escape','p','P'].includes(event.key))event.preventDefault();
       if(event.repeat)return;
       if(event.key==='ArrowLeft'||event.key.toLowerCase()==='a')game.current?.move(-1);
@@ -61,11 +65,11 @@ export function GameApp(){
       if(event.key==='Escape'||event.key.toLowerCase()==='p')pause();
     };
     const release=(event:KeyboardEvent)=>{if(event.key===' ')boost(false);};
-    const hidden=()=>{if(document.hidden&&screen==='game'){boost(false);game.current?.setPaused(true);setPaused(true);}};
-    const blur=()=>{if(screen==='game'){boost(false);game.current?.setPaused(true);setPaused(true);}};
+    const hidden=()=>{if(document.hidden&&screen==='game'&&racePhase==='race'){boost(false);game.current?.setPaused(true);setPaused(true);}};
+    const blur=()=>{if(screen==='game'&&racePhase==='race'){boost(false);game.current?.setPaused(true);setPaused(true);}};
     window.addEventListener('keydown',key);window.addEventListener('keyup',release);window.addEventListener('blur',blur);document.addEventListener('visibilitychange',hidden);
     return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',release);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',hidden);};
-  },[screen,modal,pause,boost]);
+  },[screen,racePhase,modal,pause,boost]);
   const initAudio=()=>{
     if(!audio.current)try{audio.current=new RaceAudio();}catch{}
     void audio.current?.resume();
@@ -73,10 +77,15 @@ export function GameApp(){
   const start=async()=>{
     initAudio();setBusy(true);setError('');session.current=null;
     try{session.current=await api<{id:string;token:string}>('runs',{});}catch{ /* Offline driving stays available; score publication is explicit. */ }
-    setBusy(false);setHud(EMPTY);setPaused(false);setModal('none');setContinuations(0);setSaved(false);
+    setBusy(false);setHud(EMPTY);setPaused(false);setModal('none');setContinuations(0);setSaved(false);setRacePhase('loading');
     setRunId(n=>n+1);setScreen('game');
   };
-  const chooseDriver=(driver:Driver)=>updateStored({driver,carColor:(driver==='boy'?BOY_COLORS:GIRL_COLORS)[0].value});
+  const beginRace=()=>{
+    if(racePhase!=='rules')return;
+    initAudio();game.current?.beginRace();setPaused(false);setRacePhase('race');
+  };
+  const retryLoading=()=>{setRacePhase('loading');setHud(EMPTY);setRunId(n=>n+1);};
+  const chooseDriver=(driver:Driver)=>updateStored({driver,carColor:driver===stored.driver?stored.carColor:(driver==='boy'?BOY_COLORS:GIRL_COLORS)[0].value});
   const finish=()=>{
     game.current?.setPaused(true);setPaused(true);
     updateStored({bestScore:Math.max(stored.bestScore,hudRef.current.score),demoRuns:stored.demoRuns+1});
@@ -142,11 +151,11 @@ export function GameApp(){
         </>}
         {screen!=='garage'&&<div className="setup-steps"><i className="active"/><i className={screen==='color'?'active':''}/><span>{screen==='driver'?'01 / ВОДИТЕЛЬ':'02 / ВАШ ST9'}</span></div>}
       </div>}
-      {screen==='game'&&<div className={`screen game-screen ${hud.boosting?'is-boosting':''}`}>
-        <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted} onSound={onSound}/>
-        <div className="race-hearts" role="status" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><span key={n} aria-hidden="true" className={n<=hud.lives?'':'lost'}>♥</span>)}</div>
-        {hud.countdown>0&&<div className="race-countdown" role="status" aria-label={`Старт через ${hud.countdown}`}><strong key={hud.countdown}>{hud.countdown}</strong></div>}
-        {paused&&modal==='none'&&<div className="pause-overlay"><h2>ПАУЗА</h2><p>{hud.score} очков · {(hud.distance/1000).toFixed(1)} км</p><button className="button green" onClick={pause}>ПРОДОЛЖИТЬ</button><button className="text-button" onClick={()=>{initAudio();setSound(!sound);}}>ЗВУК: {sound?'ВКЛ':'ВЫКЛ'}</button><button className="text-button" onClick={finish}>ЗАВЕРШИТЬ ЗАЕЗД</button></div>}
+      {screen==='game'&&<div className={`screen game-screen ${racePhase!=='race'?'is-preparing':''} ${hud.boosting?'is-boosting':''}`}>
+        <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted} onSound={onSound} onReady={onGameReady} onError={onGameError}/>
+        {racePhase==='race'&&hud.countdown===0&&<div className="race-hearts" role="status" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><span key={n} aria-hidden="true" className={n<=hud.lives?'':'lost'}>♥</span>)}</div>}
+        <RaceStartOverlay phase={racePhase} countdown={hud.countdown} paused={paused||modal!=='none'} onBegin={beginRace} onRetry={retryLoading}/>
+        {racePhase==='race'&&paused&&modal==='none'&&<div className="pause-overlay"><h2>ПАУЗА</h2><p>{hud.score} очков · {(hud.distance/1000).toFixed(1)} км</p><button className="button green" onClick={pause}>ПРОДОЛЖИТЬ</button><button className="text-button" onClick={()=>{initAudio();setSound(!sound);}}>ЗВУК: {sound?'ВКЛ':'ВЫКЛ'}</button><button className="text-button" onClick={finish}>ЗАВЕРШИТЬ ЗАЕЗД</button></div>}
       </div>}
       <dialog ref={modalRef} className="modal-card" onCancel={event=>{event.preventDefault();closeModal();}}>
         <button className="modal-close icon-button" aria-label="Закрыть" onClick={closeModal}><Icon name="close"/></button>
