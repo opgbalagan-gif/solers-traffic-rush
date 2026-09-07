@@ -149,7 +149,6 @@ export function GameApp(){
             <div className="vehicle-card"><div><strong>ST9</strong><span>ПИКАП</span></div><div className="stat-bars">{[['СКОРОСТЬ',45],['УПРАВЛЕНИЕ',65],['УСКОРЕНИЕ',50]].map(([label,width])=><span key={label}><em>{label}</em><i><b style={{width:width+'%'}}/></i></span>)}</div><div className="drive-type"><span>ПОЛНЫЙ<br/>ПРИВОД</span><strong>4×4</strong></div></div>
             <a className="dealer-link" href="https://sollers-avilon.ru/models/st9/" target="_blank" rel="noreferrer">ОБ АВТОМОБИЛЕ ST9 ↗</a>
           </section>}
-          {screen==='color'&&<p className="driving-hint">Свайп — сменить полосу<br/>Удерживай экран — азот</p>}
           <button className="button green setup-next" onClick={start} disabled={busy}>{busy?'ВЫЕЗЖАЕМ…':'ПОЕХАЛИ'}</button>
         </>}
         {screen!=='garage'&&<div className="setup-steps"><i className="active"/><i className={screen==='color'?'active':''}/><span>{screen==='driver'?'01 / ВОДИТЕЛЬ':'02 / ВАШ ST9'}</span></div>}
@@ -176,6 +175,6 @@ export function GameApp(){
         {modal==='result'&&<><span className="eyebrow">{hud.score>=stored.bestScore&&hud.score>0?'ЛИЧНЫЙ РЕКОРД':'ХОРОШИЙ ЗАЕЗД'}</span><h2>ФИНИШ</h2><div className="result-score">{hud.score}<span>ОЧКОВ</span></div><p>{(hud.distance/1000).toFixed(1)} км · {hud.overtakes} обгонов · {hud.bonuses} бонусов</p>{saved?<><p className="success-message">✓ Результат в таблице лидеров</p><button className="button secondary" onClick={records}>ПОСМОТРЕТЬ ЛИДЕРОВ</button></>:<form onSubmit={e=>{e.preventDefault();void publishScore();}}><label className="field-label" htmlFor="player-name">Имя в таблице лидеров</label><input id="player-name" value={name} onChange={e=>setName(e.target.value)} className="name-input" placeholder="Ваш позывной" minLength={2} maxLength={20} required autoComplete="nickname"/>{error&&<p className="form-error" role="alert">{error}</p>}<button className="button secondary" type="submit" disabled={busy||name.trim().length<2}>{busy?'СОХРАНЯЕМ…':'В ТАБЛИЦУ ЛИДЕРОВ'}</button></form>}<button className="button orange" onClick={start} disabled={busy}>ЕЩЁ ЗАЕЗД</button><button className="text-button" onClick={()=>{setModal('none');setScreen('menu');}}>В ГЛАВНОЕ МЕНЮ</button></>}
       </dialog>
     </section>
-    <footer className="outside-help"><span><kbd>←</kbd><kbd>→</kbd> УПРАВЛЕНИЕ</span><span>УДЕРЖИВАЙ <kbd>ПРОБЕЛ</kbd> АЗОТ</span><span>3 ЖИЗНИ. ОДНА ТРАССА. ВАШ РЕКОРД.</span></footer>
+    {screen!=='garage'&&screen!=='color'&&<footer className="outside-help"><span><kbd>←</kbd><kbd>→</kbd> УПРАВЛЕНИЕ</span><span>УДЕРЖИВАЙ <kbd>ПРОБЕЛ</kbd> АЗОТ</span><span>3 ЖИЗНИ. ОДНА ТРАССА. ВАШ РЕКОРД.</span></footer>}
   </main>;
 }
