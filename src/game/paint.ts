@@ -24,9 +24,16 @@ export function repaintBody(data: Uint8ClampedArray, color: string, sourcePaint:
   for (let i = 0; i < data.length; i += 4) {
     if (!data[i + 3]) continue;
     const source = rgbToHsl(data[i], data[i + 1], data[i + 2]);
-    // Neutral trim, glass, white lighting and red brake lights retain their original pixels.
-    if (source.h < minHue || source.h > maxHue || source.s < .12) continue;
-    const mask = Math.min(1, (source.h - minHue) / 12, (maxHue - source.h) / 8, (source.s - .12) / .2);
+    const mask = source.h >= minHue && source.h <= maxHue && source.s >= .12
+      ? Math.min(1, (source.h - minHue) / 12, (maxHue - source.h) / 8, (source.s - .12) / .2)
+      : 0;
+    // The dealer photo has cyan highlights outside the blue paint mask. Keep their
+    // brightness, but blend against neutral light instead of leaving blue fringes.
+    if (sourcePaint === 'blue' && source.h >= 170 && source.h <= 275 && mask < 1) {
+      const highlight = Math.max(data[i], data[i + 1], data[i + 2]);
+      data[i] = data[i + 1] = data[i + 2] = highlight;
+    }
+    if (mask === 0) continue;
     const lightness = source.l <= baseLightness
       ? target.l * source.l / baseLightness
       : target.l + (1 - target.l) * (source.l - baseLightness) / (1 - baseLightness);

@@ -49,6 +49,11 @@ assert.equal(render('race', 0), '', 'Driving leaves no start overlay');
 
 const { repaintBody } = loadSource('src/game/paint.ts');
 const { BOY_COLORS, GIRL_COLORS } = loadSource('src/config/game.ts');
+for (const { value } of [...BOY_COLORS, ...GIRL_COLORS]) {
+  const highlights = new Uint8ClampedArray([0, 194, 238, 255, 180, 188, 192, 160]);
+  repaintBody(highlights, value, 'blue');
+  assert.deepEqual(Array.from(highlights), [238, 238, 238, 255, 192, 192, 192, 160], 'Cyan glare becomes neutral white light for every selected paint, preserving brightness and alpha');
+}
 for (const sourcePaint of ['pink', 'blue']) for (const { value, name } of [...BOY_COLORS, ...GIRL_COLORS]) {
   const base = sourcePaint === 'blue' ? [23, 72, 163] : [238, 91, 158];
   const pixels = new Uint8ClampedArray([...base, 255, 35, 35, 35, 255, 220, 15, 15, 255, 245, 245, 245, 255, ...base, 0]);
