@@ -37,6 +37,13 @@
 .garage-about .vehicle-card{margin-top:12px;grid-template-columns:52px minmax(0,1fr) 52px;gap:9px}
 .garage-about .dealer-link{margin-top:16px;text-align:center}
 .garage .setup-next{margin-top:22px}
+.driving-hint{text-align:center;font:500 15px/1.5 'Barlow Condensed',Arial,sans-serif;color:#aebbc0;margin-top:18px}
+.race-hearts{position:absolute;z-index:25;right:18px;top:max(17px,env(safe-area-inset-top));display:flex;gap:5px;pointer-events:none;filter:drop-shadow(0 2px 5px #0008)}
+.race-hearts span{color:#ff907d;font:20px/1 Arial,sans-serif;transition:color .3s,transform .3s}
+.race-hearts span.lost{color:#ffffff30;transform:scale(.78)}
+.phaser-shell{-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
+.setup-screen.color{overflow-y:auto;overscroll-behavior:contain}
+.color>*{flex-shrink:0}
 
 /* Race presentation: calm chrome, readable telemetry and clear action feedback. */
 .race-hud{background:linear-gradient(140deg,#0a1419eb,#101f22d9);box-shadow:0 6px 20px #0005;border-color:#d2e7e324;top:12px}

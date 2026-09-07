@@ -18,7 +18,7 @@ export function projectRoad(z: number, x = 0, distance = 0, cameraLean = 0) {
   const bend = roadCurve(distance + z) - roadCurve(distance) - roadSlope(distance) * z;
   return { x: 215 + (x + bend - cameraLean) * scale, y: -75 + 17.7 * scale, scale };
 }
-export type RaceEvent = { type: 'start' | 'crash' | 'exhausted' | 'boost' | 'bonus' | 'near' | 'milestone'; x?: number; value?: number };
+export type RaceEvent = { type: 'start' | 'crash' | 'exhausted' | 'boost' | 'boost-ready' | 'bonus' | 'near' | 'pass' | 'milestone'; x?: number; value?: number };
 export type Vehicle = {
   id: number; lane: number; x: number; z: number; speed: number; desiredSpeed: number;
   kind: 'blue' | 'yellow' | 'red' | 'white' | 'truck' | 'bonus'; width: number; length: number;
@@ -63,6 +63,9 @@ export class RaceSimulation {
   private previousGap = 1;
   private bonusScore = 0;
   private events: RaceEvent[] = [];
+  private boostHeld = false;
+  private boostActive = false;
+  private boostDepleted = false;
 
   constructor(random = Math.random) {
     this.random = random;
@@ -90,6 +93,7 @@ export class RaceSimulation {
   setPaused(paused: boolean) {
     if (!paused && this.state.lives === 0) return;
     this.paused = paused;
+    if (paused) this.setBoostHeld(false);
   }
 
   continueRace() {
@@ -102,11 +106,14 @@ export class RaceSimulation {
   }
 
   boost() {
-    if (this.paused || this.countdown > 0 || this.state.lives === 0 || this.state.charge < 100) return false;
-    this.state.charge = 0;
-    this.state.boostUntil = this.state.clock + 4;
-    this.events.push({ type: 'boost' });
-    return true;
+    return this.setBoostHeld(true);
+  }
+
+  setBoostHeld(held: boolean) {
+    this.boostHeld = held && !this.paused && this.countdown <= 0 && this.state.lives > 0;
+    if (!held) this.boostDepleted = false;
+    if (!this.boostHeld) { this.boostActive = false; this.state.boostUntil = this.state.clock; }
+    return this.boostHeld && this.state.charge > 0 && !this.boostDepleted;
   }
 
   damage(object: Vehicle) {
@@ -157,6 +164,7 @@ export class RaceSimulation {
 
   step(elapsed: number) {
     if (this.paused) return [];
+    const previousCharge = this.state.charge;
     let remaining = clamp(elapsed, 0, .05);
     while (remaining > .000001 && !this.paused) {
       const dt = Math.min(1 / 120, remaining);
@@ -173,7 +181,14 @@ export class RaceSimulation {
       }
       const state = this.state;
       state.clock += dt;
-      const boosting = state.clock < state.boostUntil;
+      const boosting = this.boostHeld && !this.boostDepleted && state.charge > 0;
+      if (boosting) {
+        if (!this.boostActive) this.events.push({ type: 'boost' });
+        state.charge = Math.max(0, state.charge - dt * 25);
+        state.boostUntil = state.clock + dt;
+        if (state.charge === 0) this.boostDepleted = true;
+      } else state.boostUntil = state.clock;
+      this.boostActive = boosting;
       const ghost = state.clock < state.ghostUntil;
       const cruise = Math.min(170, 108 + state.distance * .018);
       const targetSpeed = (cruise + (boosting ? 57 : 0)) * (ghost ? .78 : 1);
@@ -210,7 +225,7 @@ export class RaceSimulation {
               this.bonusScore += 15;
               state.charge = Math.min(100, state.charge + 8);
               this.events.push({ type: 'near', x: car.x, value: 15 });
-            }
+            } else this.events.push({ type: 'pass', x: car.x, value: state.combo });
           }
         }
       }
@@ -236,6 +251,7 @@ export class RaceSimulation {
         this.nextBonus = 5 + this.random() * 2;
       }
     }
+    if (previousCharge < 100 && this.state.charge >= 100) this.events.push({ type: 'boost-ready' });
     const events = this.events;
     this.events = [];
     return events;

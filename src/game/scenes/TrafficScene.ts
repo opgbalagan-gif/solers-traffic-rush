@@ -3,6 +3,8 @@ import { assetUrl } from '@/src/config/game';
 import { PAINT_FILTERS } from '@/src/ui/Visuals';
 import { BIOMES, RaceSimulation, biomeAt, type RaceEvent } from '@/src/game/model';
 import { RoadRenderer } from '@/src/game/RoadRenderer';
+import { RaceGestures } from '@/src/game/RaceGestures';
+import { SkillScore } from '@/src/game/SkillScore';
 
 export type HudState = {
   score: number; speed: number; boost: number; distance: number; biome: string; ghost: boolean;
@@ -35,8 +37,9 @@ export class TrafficScene extends Phaser.Scene {
   private sprites = new Map<number, Phaser.GameObjects.Image>();
   private signals!: Phaser.GameObjects.Graphics;
   private hudTimer = 0;
-  private pointerX = 0;
-  private didSwipe = false;
+  private gestures = new RaceGestures();
+  private keyboardBoost = false;
+  private skillScore!: SkillScore;
   private failed = false;
   private lastBiome = 0;
   private reducedMotion = false;
@@ -67,18 +70,20 @@ export class TrafficScene extends Phaser.Scene {
     this.playerGlow = this.add.image(215, 650, 'soft-particle').setTint(0x24d7f6).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
     this.player = this.add.image(215, 650, 'player-paint').setOrigin(.5, .86);
     this.signals = this.add.graphics().setDepth(1450);
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.pointerX = pointer.x; this.didSwipe = false; });
+    this.skillScore = new SkillScore(this);
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => { this.gestures.begin(pointer.id, pointer.x, pointer.y, performance.now()); });
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (!pointer.isDown) return;
-      const movement = pointer.x - this.pointerX;
-      if (Math.abs(movement) >= 28) {
-        this.move(movement > 0 ? 1 : -1);
-        this.pointerX = pointer.x;
-        this.didSwipe = true;
-      }
+      const direction = this.gestures.move(pointer.id, pointer.x, pointer.y);
+      if (direction !== null) this.move(direction);
     });
-    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => { if (!this.didSwipe) this.move(pointer.x < 215 ? -1 : 1); });
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.roadView.destroy());
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (this.gestures.end(pointer.id)) this.simulation.setBoostHeld(this.keyboardBoost);
+    });
+    const cancelGesture = () => { this.gestures.cancel(); this.simulation.setBoostHeld(this.keyboardBoost); };
+    this.input.on('pointerupoutside', cancelGesture);
+    this.input.on('gameout', cancelGesture);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { this.roadView.destroy(); this.skillScore.destroy(); });
     this.roadView.update(0, this.simulation);
     this.renderVehicles();
     this.emitHud();
@@ -88,6 +93,8 @@ export class TrafficScene extends Phaser.Scene {
   move(direction: -1 | 1) { this.simulation.move(direction); }
 
   setPaused(paused: boolean) {
+    this.gestures.cancel();
+    this.keyboardBoost = false;
     this.simulation.setPaused(paused);
     this.time.paused = this.simulation.paused;
     if (this.simulation.paused) this.tweens.pauseAll(); else this.tweens.resumeAll();
@@ -100,7 +107,10 @@ export class TrafficScene extends Phaser.Scene {
     this.emitHud();
   }
 
-  activateBoost() { return this.simulation.boost(); }
+  activateBoost(held: boolean) {
+    this.keyboardBoost = held;
+    return this.simulation.setBoostHeld(held);
+  }
 
   private emitHud() {
     const state = this.simulation.state;
@@ -117,11 +127,13 @@ export class TrafficScene extends Phaser.Scene {
     this.options.onSound?.(event.type);
     switch (event.type) {
       case 'start': this.roadView.notify('ПОЕХАЛИ', 'ДЕРЖИТЕ ТРАССУ', '#f6f8f0'); break;
-      case 'boost': this.roadView.notify('4H BOOST', 'ПОЛНЫЙ ПРИВОД. ПОЛНЫЙ ГАЗ.', '#6df2ff'); break;
+      case 'boost': this.roadView.notify('АЗОТ', '', '#6df2ff'); break;
+      case 'boost-ready': this.roadView.notify('АЗОТ ГОТОВ', 'УДЕРЖИВАЙТЕ ЭКРАН', '#6df2ff'); break;
       case 'crash':
         if (!this.reducedMotion) this.cameras.main.shake(180, .004);
         this.roadView.burst(this.player.x, this.player.y - 50, 'crash');
-        this.roadView.notify('−1 ЖИЗНЬ', '3 СЕКУНДЫ ЗАЩИТЫ', '#ffb18f');
+        this.skillScore.crash(this.simulation.state);
+        this.roadView.notify('−1 ЖИЗНЬ', `ОСТАЛОСЬ: ${this.simulation.state.lives}`, '#ffb18f');
         break;
       case 'exhausted':
         this.setPaused(true);
@@ -130,9 +142,10 @@ export class TrafficScene extends Phaser.Scene {
         break;
       case 'bonus':
         this.roadView.burst(this.player.x, this.player.y - 65, 'bonus');
-        this.roadView.notify('+10', 'БОНУС И ЗАРЯД УСКОРЕНИЯ', '#bdff97');
+        this.skillScore.show('БОНУС', this.simulation.state, 10);
         break;
-      case 'near': this.roadView.notify('НА ГРАНИ · +15', 'ЧИСТЫЙ ОБГОН', '#ffd17e'); break;
+      case 'near': this.skillScore.show('НА ГРАНИ', this.simulation.state, (event.value ?? 15) + this.simulation.state.combo); break;
+      case 'pass': this.skillScore.show('ЧИСТЫЙ ОБГОН', this.simulation.state, event.value); break;
       case 'milestone':
         if (event.value && event.value % 1000 === 0) this.roadView.notify((event.value / 1000) + ' КМ', 'ПРОДОЛЖАЙТЕ В ТОМ ЖЕ ДУХЕ');
         break;
@@ -180,10 +193,12 @@ export class TrafficScene extends Phaser.Scene {
   update(_time: number, deltaMs: number) {
     if (!this.player || this.failed || this.simulation.paused) return;
     const dt = Math.min(deltaMs, 50) / 1000;
+    this.simulation.setBoostHeld(this.keyboardBoost || this.gestures.holding(performance.now()));
     const events = this.simulation.step(dt);
     this.roadView.update(dt, this.simulation);
     this.renderVehicles();
     for (const event of events) this.event(event);
+    this.skillScore.update(dt, this.simulation.state.score);
     const biome = biomeAt(this.simulation.state.distance);
     if (biome !== this.lastBiome) { this.lastBiome = biome; this.roadView.notify(BIOMES[biome].name, 'НОВЫЙ УЧАСТОК ТРАССЫ'); }
     this.hudTimer -= dt;

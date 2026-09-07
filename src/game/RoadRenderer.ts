@@ -84,10 +84,10 @@ export class RoadRenderer {
     if (this.text) { this.scene.tweens.killTweensOf(this.text); this.text.destroy(); }
     const headline = this.scene.add.text(0, 0, title, { fontFamily: 'Arial', fontSize: '27px', fontStyle: 'bold', color, stroke: '#0a1516', strokeThickness: 5 }).setOrigin(.5);
     const detail = this.scene.add.text(0, 31, subtitle, { fontFamily: 'Arial', fontSize: '12px', color: '#e3e9e8', stroke: '#0a1516', strokeThickness: 3 }).setOrigin(.5);
-    this.text = this.scene.add.container(215, 265, [headline, detail]).setDepth(2200).setAlpha(0).setScale(.9);
+    this.text = this.scene.add.container(215, 172, [headline, detail]).setDepth(2200).setAlpha(0).setScale(.9);
     const current = this.text;
     this.scene.tweens.add({ targets: current, alpha: 1, scale: 1, duration: 160, ease: 'Back.Out' });
-    this.scene.tweens.add({ targets: current, alpha: 0, y: 235, delay: 1150, duration: 420, onComplete: () => { if (this.text === current) this.text = undefined; current.destroy(); } });
+    this.scene.tweens.add({ targets: current, alpha: 0, y: this.reducedMotion ? 172 : 152, delay: 1000, duration: 380, onComplete: () => { if (this.text === current) this.text = undefined; current.destroy(); } });
   }
 
   burst(x: number, y: number, kind: 'crash' | 'bonus' | 'boost' | 'dust') {

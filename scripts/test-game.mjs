@@ -68,11 +68,28 @@ assert(damage.state.ghostUntil > damage.state.clock);
 assert(!damage.continueRace(), 'Continuation cannot reset a healthy run');
 
 const boost = emptyRace(); boost.countdown = 0;
-assert(boost.boost()); assert(!boost.boost());
-advance(boost, 2); assert(boost.state.speed > 140); assert.equal(boost.state.charge, 0);
+assert(boost.setBoostHeld(true));
+advance(boost, 2); assert(boost.state.speed > 140); assert(Math.abs(boost.state.charge - 50) < .1);
+boost.setBoostHeld(false);
+assert.equal(boost.state.boostUntil, boost.state.clock, 'Release immediately ends nitro');
+advance(boost, 1); assert(boost.state.charge > 55, 'Release regenerates unused charge');
+assert(boost.setBoostHeld(true)); advance(boost, .5);
 boost.setPaused(true); const boostClock = boost.state.clock; advance(boost, 3); assert.equal(boost.state.clock, boostClock);
-boost.setPaused(false); advance(boost, 3); assert(boost.state.charge > 0);
-assert(boost.state.clock > boost.state.boostUntil);
+boost.setPaused(false); advance(boost, .5); assert.equal(boost.state.boostUntil, boost.state.clock, 'Resume requires a fresh hold');
+boost.setBoostHeld(true); advance(boost, 5);
+assert.equal(boost.state.boostUntil, boost.state.clock, 'An empty tank cannot repeatedly reactivate while still held');
+boost.setBoostHeld(false); advance(boost, 1); assert(boost.setBoostHeld(true));
+
+const gestureCode = ts.transpile(readFileSync('src/game/RaceGestures.ts', 'utf8'), { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 });
+const gestureModule = { exports: {} };
+new Function('exports', 'module', gestureCode)(gestureModule.exports, gestureModule);
+const gesture = new gestureModule.exports.RaceGestures();
+gesture.begin(1, 100, 300, 0); assert(!gesture.holding(100)); assert(gesture.holding(181));
+gesture.end(1); assert(!gesture.holding(500), 'Release immediately cancels a hold');
+gesture.begin(1, 100, 300, 0); assert.equal(gesture.move(1, 132, 300), 1); assert(!gesture.holding(900), 'A swipe never becomes nitro');
+gesture.cancel(); gesture.begin(1, 100, 300, 0); gesture.move(1, 100, 330); assert(!gesture.holding(900), 'Vertical scrolling is not nitro');
+gesture.cancel(); gesture.begin(1, 100, 300, 0); gesture.end(2); assert(gesture.holding(900), 'Another pointer cannot release the active hold');
+gesture.cancel(); assert(!gesture.holding(900));
 
 const bonus = emptyRace(); bonus.countdown = 0; bonus.state.charge = 50;
 bonus.spawn(1, 0, 'bonus');
