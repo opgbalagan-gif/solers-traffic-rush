@@ -1,5 +1,8 @@
 # Графика
 
+## Иконки управления
+`public/icons/lucide/` содержит оригинальные SVG `pointer`, `move-horizontal` и `pause` из [Lucide](https://github.com/lucide-icons/lucide). Лицензия сохранена рядом в `LICENSE.txt`. В подсказке жестов иконки анимируются средствами CSS; при уменьшенном движении анимация отключается. Фон подсказки — сама загруженная игровая сцена с остановленной симуляцией.
+
 ## Пользовательские материалы
 - public/art/concept-black.png — неизменённый файл «ChatGPT Image 2 сент. 2026 г., 01_01_28.png».
 - public/art/concept-pink.png — неизменённый файл «ChatGPT Image 2 сент. 2026 г., 01_01_23.png».

@@ -9,6 +9,7 @@ import { PhaserGame, type PhaserGameHandle } from '@/src/ui/PhaserGame';
 import { DriverAvatar, GameLogo, Icon, VehiclePreview } from '@/src/ui/Visuals';
 import { gameApi as api } from '@/src/lib/gameApi';
 import { RaceStartOverlay, type RacePhase } from '@/src/ui/RaceStartOverlay';
+import { ControlIcon, DrivingGuide } from '@/src/ui/DrivingGuide';
 
 type Screen='menu'|'driver'|'color'|'garage'|'game';
 type Modal='none'|'settings'|'records'|'tasks'|'continue'|'phone'|'result';
@@ -57,6 +58,7 @@ export function GameApp(){
   useEffect(()=>{
     const key=(event:KeyboardEvent)=>{
       if(screen!=='game'||racePhase!=='race'||modal!=='none'||(event.target as HTMLElement).matches('input,textarea,select,[contenteditable="true"]'))return;
+      if((event.key===' '||event.key==='Enter')&&(event.target as HTMLElement).closest('button,a'))return;
       if(['ArrowLeft','ArrowRight',' ','a','d','A','D','Escape','p','P'].includes(event.key))event.preventDefault();
       if(event.repeat)return;
       if(event.key==='ArrowLeft'||event.key.toLowerCase()==='a')game.current?.move(-1);
@@ -151,11 +153,14 @@ export function GameApp(){
         </>}
         {screen!=='garage'&&<div className="setup-steps"><i className="active"/><i className={screen==='color'?'active':''}/><span>{screen==='driver'?'01 / ВОДИТЕЛЬ':'02 / ВАШ ST9'}</span></div>}
       </div>}
-      {screen==='game'&&<div className={`screen game-screen ${racePhase!=='race'?'is-preparing':''} ${hud.boosting?'is-boosting':''}`}>
+      {screen==='game'&&<div className={`screen game-screen ${racePhase!=='race'||paused?'is-preparing':''} ${hud.boosting?'is-boosting':''}`}>
         <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted} onSound={onSound} onReady={onGameReady} onError={onGameError}/>
-        {racePhase==='race'&&hud.countdown===0&&<div className="race-hearts" role="status" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><span key={n} aria-hidden="true" className={n<=hud.lives?'':'lost'}>♥</span>)}</div>}
+        {racePhase==='race'&&!paused&&modal==='none'&&<div className="race-corner">
+          {hud.countdown===0&&<div className="race-hearts" role="status" aria-label={`Осталось жизней: ${hud.lives}`}>{[1,2,3].map(n=><span key={n} aria-hidden="true" className={n<=hud.lives?'':'lost'}>♥</span>)}</div>}
+          <button className="race-pause-button" type="button" aria-label="Пауза" title="Пауза" onPointerDown={event=>event.stopPropagation()} onClick={pause}><ControlIcon name="pause" size={22}/></button>
+        </div>}
         <RaceStartOverlay phase={racePhase} countdown={hud.countdown} paused={paused||modal!=='none'} onBegin={beginRace} onRetry={retryLoading}/>
-        {racePhase==='race'&&paused&&modal==='none'&&<div className="pause-overlay"><h2>ПАУЗА</h2><p>{hud.score} очков · {(hud.distance/1000).toFixed(1)} км</p><button className="button green" onClick={pause}>ПРОДОЛЖИТЬ</button><button className="text-button" onClick={()=>{initAudio();setSound(!sound);}}>ЗВУК: {sound?'ВКЛ':'ВЫКЛ'}</button><button className="text-button" onClick={finish}>ЗАВЕРШИТЬ ЗАЕЗД</button></div>}
+        {racePhase==='race'&&paused&&modal==='none'&&<div className="pause-overlay" role="dialog" aria-labelledby="pause-title"><h2 id="pause-title">ПАУЗА</h2><p>{hud.score} очков · {(hud.distance/1000).toFixed(1)} км</p><button className="button green" onClick={pause} autoFocus>ПРОДОЛЖИТЬ</button><DrivingGuide compact/><button className="text-button" onClick={()=>{initAudio();setSound(!sound);}}>ЗВУК: {sound?'ВКЛ':'ВЫКЛ'}</button><button className="text-button" onClick={finish}>ЗАВЕРШИТЬ ЗАЕЗД</button></div>}
       </div>}
       <dialog ref={modalRef} className="modal-card" onCancel={event=>{event.preventDefault();closeModal();}}>
         <button className="modal-close icon-button" aria-label="Закрыть" onClick={closeModal}><Icon name="close"/></button>

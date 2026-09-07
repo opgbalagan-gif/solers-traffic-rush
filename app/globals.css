@@ -48,20 +48,48 @@
 
 .game-loading{z-index:35;padding:24px;text-align:center}
 .game-screen.is-preparing{touch-action:pan-y}
-.race-rules{position:absolute;inset:0;z-index:35;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;display:flex;padding:28px 24px max(24px,env(safe-area-inset-bottom));background:radial-gradient(ellipse at 50% 0%,#20323d,transparent 62%),#071015}
-.race-rules-content{width:100%;margin:auto 0}
-.race-rules .eyebrow{font-size:14px;margin-bottom:10px}
-.race-rules h2{font-size:38px;letter-spacing:.015em}
-.race-rules-intro{margin-top:12px;color:#c0cbd0;font-size:16px;line-height:1.45}
-.race-rules-list{list-style:none;display:grid;gap:20px;margin:28px 0;padding:0}
-.race-rules-list li{display:flex;align-items:center;gap:15px}
-.rule-symbol{display:grid;place-items:center;flex:0 0 42px;color:#ffd4a7;font:700 34px/1 Arial,sans-serif}
-.nitro-symbol{color:#63e6ef}.heart-symbol{color:#ff907d;font-size:29px}.score-symbol{color:#ffe44b;font-size:22px}
-.race-rules-list strong{font:700 20px/1.2 'Barlow Condensed',Arial,sans-serif;letter-spacing:.025em}
-.race-rules-list p{margin-top:5px;color:#b2c0c8;font-size:16px;line-height:1.45}
-.race-rules-keyboard{color:#8fa2ae;font-size:14px;line-height:1.8;margin-bottom:24px}
+.race-rules{position:absolute;inset:0;z-index:35;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;display:flex;padding:max(26px,env(safe-area-inset-top)) 18px max(18px,env(safe-area-inset-bottom));background:linear-gradient(#031016ed,#031016b3 30%,#03101638 58%,#03101608 75%,#031016d9);text-shadow:0 2px 8px #0008}
+.race-rules-content{width:100%;min-height:100%;display:flex;flex-direction:column;flex-shrink:0}
+.race-rules .eyebrow{font-size:14px;margin-bottom:8px;color:#ffb16f}
+.race-rules h2{font-size:32px;letter-spacing:.015em;max-width:320px}
+.gesture-guides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:20px;flex-shrink:0}
+.gesture-guide{padding:10px 8px 14px;border:1px solid #cbd9de30;border-radius:16px;background:linear-gradient(150deg,#162a35eb,#06151de6);text-align:center;box-shadow:0 8px 24px #0003}
+.gesture-picture{height:96px;position:relative;pointer-events:none}
+.control-icon{display:block;flex-shrink:0;filter:brightness(0) invert(1);user-select:none;pointer-events:none}
+.gesture-picture .control-icon{position:absolute;left:50%}
+.swipe-arrows{top:-16px;transform:translateX(-50%);opacity:.6}
+.swipe-finger{top:32px;transform:translateX(-50%);animation:teach-swipe 2.8s ease-in-out infinite}
+.hold-finger{top:30px;transform:translateX(-33%)}
+.hold-ring{position:absolute;left:50%;top:40px;width:28px;height:28px;margin:-14px;border:2px solid #62eff8;border-radius:50%;animation:teach-hold 2.2s ease-out infinite}
+.hold-ring.second{animation-delay:1.1s}
+.nitro-trails{position:absolute;right:10%;top:42px;display:flex;gap:5px;transform:skew(-12deg)}
+.nitro-trails i{width:3px;height:20px;border-radius:3px;background:linear-gradient(#90faff,transparent);animation:teach-nitro 1.2s ease-out infinite}
+.nitro-trails i:nth-child(2){animation-delay:.2s}.nitro-trails i:nth-child(3){animation-delay:.4s}
+.gesture-guide h3{font:800 23px/1.1 'Barlow Condensed',Arial,sans-serif;color:#ffb16f;margin:8px 0 7px;letter-spacing:.035em}
+.hold-guide h3{color:#8ceef5}
+.gesture-guide p{font:16px/1.4 'Barlow Condensed',Arial,sans-serif;color:#e3ebef;margin:0}
+.tutorial-track-notes{display:grid;gap:7px;margin-top:17px;color:#edf2f4;font-size:14px;line-height:1.4}
+.tutorial-track-notes span{display:flex;align-items:center;gap:9px}
+.tutorial-track-notes b{color:#ffab96;font-weight:700;white-space:nowrap}
+.tutorial-track-notes .tutorial-bonus{color:#ffe47e}
+.tutorial-track-window{flex:1;min-height:120px}
+.tutorial-footer{flex-shrink:0}
+.race-rules-keyboard{color:#e0e9ec;font-size:14px;line-height:1.6;margin-bottom:12px;display:none}
 .race-rules .button{width:100%;min-height:54px;font-size:24px}
-@media(max-height:700px){.race-rules{padding-top:22px}.race-rules-list{gap:14px;margin:20px 0}.race-rules-keyboard{margin-bottom:18px}.race-rules h2{font-size:32px}}
+.race-corner{position:absolute;z-index:25;right:14px;top:max(12px,env(safe-area-inset-top));display:flex;align-items:center;gap:12px;pointer-events:none}
+.race-corner .race-hearts{position:static}
+.race-pause-button{width:46px;height:46px;padding:0;display:grid;place-items:center;border:1px solid #d0e2e548;border-radius:13px;background:#07141d9e;box-shadow:0 3px 12px #0003;pointer-events:auto;touch-action:manipulation}
+.race-pause-button:hover{background:#172e3be6}
+.control-reminders{display:grid;gap:12px;color:#c1d5dd;font-size:15px}
+.control-reminders span{display:flex;align-items:center;gap:12px}
+.pause-overlay{overflow-y:auto;touch-action:pan-y;padding:28px 18px;justify-content:flex-start}
+.pause-overlay>*{flex-shrink:0}.pause-overlay>:first-child{margin-top:auto}.pause-overlay>:last-child{margin-bottom:auto}
+@keyframes teach-swipe{0%,10%,100%{transform:translateX(calc(-50% - 22px)) rotate(-9deg)}45%,60%{transform:translateX(calc(-50% + 22px)) rotate(9deg)}}
+@keyframes teach-hold{0%{transform:scale(.65);opacity:.95}100%{transform:scale(1.85);opacity:0}}
+@keyframes teach-nitro{0%{transform:translateY(14px);opacity:0}30%{opacity:1}100%{transform:translateY(-17px);opacity:0}}
+@media(hover:hover) and (pointer:fine){.race-rules-keyboard{display:block}}
+@media(max-height:700px){.race-rules{padding-top:20px}.race-rules h2{font-size:28px}.gesture-guides{margin-top:14px;gap:10px}.gesture-picture{height:82px}.gesture-picture .swipe-finger,.gesture-picture .hold-finger{top:20px;width:54px;height:54px}.hold-ring{top:29px}.nitro-trails{top:32px}.gesture-guide h3{font-size:21px}.tutorial-track-window{min-height:90px}}
+@media(prefers-reduced-motion:reduce){.swipe-finger{transform:translateX(-50%)}.hold-ring.second{display:none}.hold-ring{opacity:.8}.nitro-trails i{opacity:.7}}
 
 /* Race presentation: calm chrome, readable telemetry and clear action feedback. */
 .race-hud{background:linear-gradient(140deg,#0a1419eb,#101f22d9);box-shadow:0 6px 20px #0005;border-color:#d2e7e324;top:12px}

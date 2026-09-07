@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { createElement } from 'react';
@@ -12,7 +12,13 @@ function loadSource(path) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText;
   const compiledModule = { exports: {} };
-  new Function('exports', 'module', 'require', code)(compiledModule.exports, compiledModule, require);
+  const sourceRequire = name => {
+    if (!name.startsWith('@/')) return require(name);
+    const dependency = ['.ts', '.tsx'].map(extension => name.slice(2) + extension).find(existsSync);
+    if (!dependency) throw new Error(`Missing source dependency: ${name}`);
+    return loadSource(dependency);
+  };
+  new Function('exports', 'module', 'require', code)(compiledModule.exports, compiledModule, sourceRequire);
   return compiledModule.exports;
 }
 
@@ -27,6 +33,10 @@ assert(render('loading').includes('Загружаем трассу'));
 assert(!render('loading').includes('НАЧАТЬ ЗАЕЗД'));
 assert(render('rules').includes('НАЧАТЬ ЗАЕЗД'));
 assert(!render('rules').includes('game-loading'));
+assert(render('rules').includes('/icons/lucide/pointer.svg'));
+assert(render('rules').includes('/icons/lucide/move-horizontal.svg'));
+assert(render('rules').includes('УДЕРЖИВАЙ'));
+assert(render('rules').includes('Пауза — справа вверху'));
 assert(render('error').includes('ПОВТОРИТЬ ЗАГРУЗКУ'));
 assert(!render('error').includes('НАЧАТЬ ЗАЕЗД'));
 for (const n of [3, 2, 1]) {
