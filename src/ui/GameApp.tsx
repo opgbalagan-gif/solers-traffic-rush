@@ -11,6 +11,7 @@ import { gameApi as api } from '@/src/lib/gameApi';
 import { RaceStartOverlay, type RacePhase } from '@/src/ui/RaceStartOverlay';
 import { ControlIcon, DrivingGuide } from '@/src/ui/DrivingGuide';
 import { NitroMeter } from '@/src/ui/NitroMeter';
+import { ScoreSubmission, type ScorePayload, type Submission } from '@/src/ui/ScoreSubmission';
 
 type Screen='menu'|'driver'|'color'|'garage'|'game';
 type Modal='none'|'settings'|'records'|'tasks'|'continue'|'phone'|'result';
@@ -24,8 +25,10 @@ export function GameApp(){
   const [runId,setRunId]=useState(0),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [racePhase,setRacePhase]=useState<RacePhase>('loading');
   const [leaderboard,setLeaderboard]=useState<Leader[]>([]),[leaderLoading,setLeaderLoading]=useState(false);
+  const [leaderError,setLeaderError]=useState(''),[submission,setSubmission]=useState<Submission|null>(null);
+  const leaderRequest=useRef(0),leaderFlight=useRef<Promise<void>|null>(null),scoreFlights=useRef(new Set<string>());
   const [name,setName]=useState(''),[phone,setPhone]=useState(''),[consent,setConsent]=useState(false);
-  const [continuations,setContinuations]=useState(0),[socialOpened,setSocialOpened]=useState(false),[saved,setSaved]=useState(false);
+  const [continuations,setContinuations]=useState(0),[socialOpened,setSocialOpened]=useState(false);
   const [config,setConfig]=useState<Config>({socialUrl:null,socialLabel:'Соцсети дилера',phoneReady:false,privacyUrl:null,continueMode:'alternate'});
   const session=useRef<{id:string;token:string}|null>(null),hudRef=useRef(EMPTY);
   const modalRef=useRef<HTMLDialogElement>(null);
@@ -33,6 +36,21 @@ export function GameApp(){
   const [sound,setSound]=useState(false);
   const audio=useRef<RaceAudio|null>(null);
   const updateStored=useCallback((patch:Partial<typeof DEFAULT_STATE>)=>setStored(old=>{const next={...old,...patch};saveGameState(next);return next;}),[]);
+  const refreshLeaders=useCallback((afterSave=false)=>{
+    if(leaderFlight.current&&!afterSave)return leaderFlight.current;
+    const request=++leaderRequest.current;
+    setLeaderLoading(true);setLeaderError('');
+    const flight=(async()=>{
+      try{
+        const data=await api<{rows:Leader[]}>('leaderboard');
+        if(request===leaderRequest.current)setLeaderboard(data.rows);
+      }catch(e){if(request===leaderRequest.current)setLeaderError((e as Error).message);}
+      finally{if(request===leaderRequest.current){setLeaderLoading(false);leaderFlight.current=null;}}
+    })();
+    leaderFlight.current=flight;
+    return flight;
+  },[]);
+  useEffect(()=>{void refreshLeaders();},[refreshLeaders]);
   useEffect(()=>{
     const hydrate=window.setTimeout(()=>{setStored(loadGameState());setReady(true);},0);
     api<Config>('config').then(setConfig).catch(()=>{});
@@ -44,6 +62,8 @@ export function GameApp(){
   useEffect(()=>{
     const d=modalRef.current;if(!d)return;
     if(modal!=='none'&&!d.open)d.showModal();else if(modal==='none'&&d.open)d.close();
+    if(modal!=='none')d.scrollTop=0;
+    if(modal==='records')d.querySelector<HTMLElement>('#leaderboard-title')?.focus({preventScroll:true});
     setError('');
   },[modal]);
   const onHud=useCallback((value:HudState)=>setHud(value),[]);
@@ -80,7 +100,7 @@ export function GameApp(){
   const start=async()=>{
     initAudio();setBusy(true);setError('');session.current=null;
     try{session.current=await api<{id:string;token:string}>('runs',{});}catch{ /* Offline driving stays available; score publication is explicit. */ }
-    setBusy(false);setHud(EMPTY);setPaused(false);setModal('none');setContinuations(0);setSaved(false);setRacePhase('loading');
+    setBusy(false);setHud(EMPTY);setPaused(false);setModal('none');setContinuations(0);setRacePhase('loading');
     setRunId(n=>n+1);setScreen('game');
   };
   const beginRace=()=>{
@@ -95,18 +115,16 @@ export function GameApp(){
     setModal('result');
   };
   const closeModal=()=>{if(modal==='continue'||modal==='phone'){finish();return;}setModal('none');if(modal==='result'){setScreen('menu');setPaused(false);}};
-  const records=async()=>{
+  const records=()=>{
     if(screen==='game'){setScreen('menu');setPaused(false);}
-    setModal('records');setLeaderLoading(true);setLeaderboard([]);
-    try{const data=await api<{rows:Leader[]}>('leaderboard');setLeaderboard(data.rows);}catch(e){setError((e as Error).message);}finally{setLeaderLoading(false);}
+    setModal('records');void refreshLeaders();
   };
   useEffect(()=>{
     if(modal!=='records')return;
-    let disposed=false;
-    const refresh=()=>{if(document.hidden)return;api<{rows:Leader[]}>('leaderboard').then(data=>{if(!disposed){setLeaderboard(data.rows);setError('');}}).catch(()=>{});};
+    const refresh=()=>{if(!document.hidden)void refreshLeaders();};
     const timer=window.setInterval(refresh,15000);
-    return()=>{disposed=true;window.clearInterval(timer);};
-  },[modal]);
+    return()=>{window.clearInterval(timer);};
+  },[modal,refreshLeaders]);
   const continueRace=()=>{setContinuations(n=>n+1);setModal('none');setPaused(false);game.current?.continueRace();};
   const sendLead=async()=>{
     setBusy(true);setError('');
@@ -116,14 +134,25 @@ export function GameApp(){
       continueRace();
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   };
-  const publishScore=async()=>{
-    setBusy(true);setError('');
+  const sendScore=async(payload:ScorePayload)=>{
+    if(scoreFlights.current.has(payload.id))return;
+    scoreFlights.current.add(payload.id);
+    setSubmission({payload,status:'sending'});
     try{
-      if(!session.current)throw new Error('Этот заезд начат без сервера. Новый заезд можно будет записать в таблицу.');
-      const result=await api<{saved:boolean}>('scores',{...session.current,name,score:hud.score,distance:hud.distance});
+      const result=await api<{saved:boolean}>('scores',payload);
       if(result.saved!==true)throw new Error('Сервер не подтвердил сохранение. Попробуйте ещё раз.');
-      setSaved(true);
-    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+      setSubmission(current=>current?.payload.id===payload.id?{payload,status:'saved'}:current);
+      void refreshLeaders(true);
+    }catch(e){setSubmission(current=>current?.payload.id===payload.id?{payload,status:'error',error:(e as Error).message}:current);}
+    finally{scoreFlights.current.delete(payload.id);}
+  };
+  const publishScore=()=>{
+    const playerName=name.trim();
+    if(playerName.length<2||playerName.length>20||/^[=+@\-]|[<>\x00-\x1f]/.test(playerName)){setError('Позывной: 2–20 символов, без служебных знаков в начале.');return;}
+    if(!session.current){setError('Этот заезд начат без сервера. Новый заезд можно будет записать в таблицу.');return;}
+    const payload={...session.current,name:playerName,score:hud.score,distance:hud.distance};
+    setScreen('menu');setPaused(false);setModal('records');setError('');
+    void sendScore(payload);
   };
   const phoneTurn=config.continueMode==='phone-third'?(continuations+1)%3===0:config.continueMode==='choice'?false:continuations%2===1;
   return <main className="experience-shell">
@@ -171,10 +200,27 @@ export function GameApp(){
         <button className="modal-close icon-button" aria-label="Закрыть" onClick={closeModal}><Icon name="close"/></button>
         {modal==='settings'&&<><span className="eyebrow">SOLLERS TRAFFIC RUSH</span><h2>НАСТРОЙКИ</h2><button className="setting-row" onClick={()=>{initAudio();setSound(!sound);}}><Icon name={sound?'sound':'mute'}/><span>Звук двигателя</span><b>{sound?'ВКЛ':'ВЫКЛ'}</b></button><div className="instructions"><p><kbd>←</kbd> <kbd>→</kbd> или <kbd>A</kbd> <kbd>D</kbd> — сменить полосу</p><p>Удерживай <kbd>Пробел</kbd> — азот</p><p><kbd>Esc</kbd> — пауза</p><p>На телефоне: свайп — сменить полосу, удержание экрана — азот.</p><p>У вас 3 жизни. После удара ST9 на 3 секунды становится прозрачным.</p></div></>}
         {modal==='tasks'&&<><span className="eyebrow">КАЖДЫЙ ЗАЕЗД — НОВЫЙ ВЫЗОВ</span><h2>ЗАДАНИЯ</h2>{[['Обгони 20 машин',hud.overtakes,20],['Собери 5 бонусов',hud.bonuses,5],['Проедь 3 километра',hud.distance,3000]].map(([label,value,target])=><div className="mission" key={label}><div><span>{label}</span><b>{Number(value)>=Number(target)?'✓':`${value} / ${target}`}</b></div><progress value={Number(value)} max={Number(target)}/></div>)}<p className="muted">Собирайте ящики +10 и обгоняйте без столкновений — серия обгонов даёт больше очков.</p><button className="button green" onClick={()=>{setModal('none');setScreen('driver');}}>НА ТРАССУ</button></>}
-        {modal==='records'&&<><span className="eyebrow">ОБЩИЙ ЗАЧЁТ</span><h2>ТАБЛИЦА ЛИДЕРОВ</h2><button className="text-button" onClick={records} disabled={leaderLoading}>ОБНОВИТЬ РЕЙТИНГ</button><div className="personal-best"><span>ВАШ РЕКОРД НА УСТРОЙСТВЕ</span><strong>{stored.bestScore}</strong></div>{leaderLoading?<p role="status">Загружаем результаты…</p>:leaderboard.length?<ol className="leaderboard">{leaderboard.map((row,i)=><li key={i}><b>{String(i+1).padStart(2,'0')}</b><span>{row.name}<small>{(row.distance/1000).toFixed(1)} км</small></span><strong>{row.score}</strong></li>)}</ol>:!error?<p className="muted">Пока нет результатов.<br/>Станьте первым на этой трассе.</p>:null}{error&&<p className="form-error" role="alert">{error}</p>}<button className="button green" onClick={()=>{setModal('none');setScreen('driver');}}>ПОБИТЬ РЕКОРД</button></>}
+        {modal==='records'&&<>
+          <span className="eyebrow">ОБЩИЙ ЗАЧЁТ</span><h2 id="leaderboard-title" tabIndex={-1}>ТАБЛИЦА ЛИДЕРОВ</h2>
+          {submission?<ScoreSubmission submission={submission} onRetry={()=>void sendScore(submission.payload)}/>:<div className="personal-best"><span>ВАШ РЕКОРД НА УСТРОЙСТВЕ</span><strong>{stored.bestScore}</strong></div>}
+          <button className="text-button" onClick={records} disabled={leaderLoading}>{leaderLoading?'ОБНОВЛЯЕМ РЕЙТИНГ…':'ОБНОВИТЬ РЕЙТИНГ'}</button>
+          {leaderboard.length?<ol className="leaderboard">{leaderboard.map((row,i)=><li key={i}><b>{String(i+1).padStart(2,'0')}</b><span>{row.name}<small>{(row.distance/1000).toFixed(1)} км</small></span><strong>{row.score}</strong></li>)}</ol>:leaderLoading?<p role="status">Загружаем результаты…</p>:!leaderError?<p className="muted">Пока нет результатов.<br/>Станьте первым на этой трассе.</p>:null}
+          {leaderError&&<p className="form-error" role="alert">{leaderError}</p>}
+          <button className="button green" onClick={()=>{setModal('none');setScreen('driver');}}>ПОБИТЬ РЕКОРД</button>
+        </>}
         {modal==='continue'&&<><span className="eyebrow">ТРИ ЖИЗНИ ПОТРАЧЕНЫ</span><h2>ЕЩЁ ОДИН<br/>ЗАЕЗД?</h2><div className="continue-score"><strong>{hud.score}</strong><span>ОЧКОВ · {(hud.distance/1000).toFixed(1)} КМ</span></div><p>Верните 3 жизни и продолжайте<br/>с того же места.</p>{phoneTurn?<><p className="muted">Оставьте телефон, чтобы получить ещё одну попытку.</p><button className="button orange" onClick={()=>setModal('phone')}>ОСТАВИТЬ ТЕЛЕФОН</button></>:<>{config.socialUrl?<><a className="button green" href={config.socialUrl} target="_blank" rel="noreferrer" onClick={()=>setSocialOpened(true)}>ПОДПИСАТЬСЯ · {config.socialLabel}</a>{socialOpened&&<><p className="muted">Подтвердите подписку. Автоматическая проверка пока не подключена.</p><button className="button orange" onClick={continueRace}>Я ПОДПИСАЛСЯ · ПРОДОЛЖИТЬ</button></>}</>:<><p className="muted">В демоверсии продолжение доступно без подписки.</p><button className="button green" onClick={continueRace}>ВЕРНУТЬ 3 ЖИЗНИ · ДЕМО</button></>}</>}{config.continueMode==='choice'&&<button className="text-button" onClick={()=>setModal('phone')}>ИЛИ ОСТАВИТЬ ТЕЛЕФОН</button>}<button className="text-button" onClick={finish}>ЗАВЕРШИТЬ И СОХРАНИТЬ РЕЗУЛЬТАТ</button></>}
         {modal==='phone'&&<><span className="eyebrow">ЕЩЁ 3 ЖИЗНИ</span><h2>ОСТАВЬТЕ<br/>НОМЕР ТЕЛЕФОНА</h2><p>Дилер свяжется с вами<br/>и расскажет о SOLLERS ST9.</p>{config.phoneReady?<form onSubmit={e=>{e.preventDefault();void sendLead();}}><label className="field-label" htmlFor="lead-phone">Телефон</label><input id="lead-phone" className="phone-input" type="tel" inputMode="tel" autoComplete="tel" placeholder="+7 (___) ___-__-__" value={phone} onChange={e=>setPhone(e.target.value)} required/><label className="consent"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} required/><span>Согласен на обработку персональных данных и звонок дилера. <a href={config.privacyUrl!} target="_blank" rel="noreferrer">Условия обработки</a></span></label>{error&&<p className="form-error" role="alert">{error}</p>}<button className="button orange" type="submit" disabled={!consent||busy}>{busy?'ОТПРАВЛЯЕМ…':'ОТПРАВИТЬ И ПРОДОЛЖИТЬ'}</button></form>:<><p className="muted">Форма появится после подключения дилера. Пока можно продолжить демоигру без номера.</p><button className="button green" onClick={continueRace}>ПРОДОЛЖИТЬ ДЕМО</button></>}<button className="text-button" onClick={finish}>СОХРАНИТЬ РЕЗУЛЬТАТ</button></>}
-        {modal==='result'&&<><span className="eyebrow">{hud.score>=stored.bestScore&&hud.score>0?'ЛИЧНЫЙ РЕКОРД':'ХОРОШИЙ ЗАЕЗД'}</span><h2>ФИНИШ</h2><div className="result-score">{hud.score}<span>ОЧКОВ</span></div><p>{(hud.distance/1000).toFixed(1)} км · {hud.overtakes} обгонов · {hud.bonuses} бонусов</p>{saved?<><p className="success-message">✓ Результат в таблице лидеров</p><button className="button secondary" onClick={records}>ПОСМОТРЕТЬ ЛИДЕРОВ</button></>:<form onSubmit={e=>{e.preventDefault();void publishScore();}}><label className="field-label" htmlFor="player-name">Имя в таблице лидеров</label><input id="player-name" value={name} onChange={e=>setName(e.target.value)} className="name-input" placeholder="Ваш позывной" minLength={2} maxLength={20} required autoComplete="nickname"/>{error&&<p className="form-error" role="alert">{error}</p>}<button className="button secondary" type="submit" disabled={busy||name.trim().length<2}>{busy?'СОХРАНЯЕМ…':'В ТАБЛИЦУ ЛИДЕРОВ'}</button></form>}<button className="button orange" onClick={start} disabled={busy}>ЕЩЁ ЗАЕЗД</button><button className="text-button" onClick={()=>{setModal('none');setScreen('menu');}}>В ГЛАВНОЕ МЕНЮ</button></>}
+        {modal==='result'&&<>
+          <span className="eyebrow">{hud.score>=stored.bestScore&&hud.score>0?'ЛИЧНЫЙ РЕКОРД':'ХОРОШИЙ ЗАЕЗД'}</span><h2>ФИНИШ</h2>
+          <div className="result-score">{hud.score}<span>ОЧКОВ</span></div><p>{(hud.distance/1000).toFixed(1)} км · {hud.overtakes} обгонов · {hud.bonuses} бонусов</p>
+          <form onSubmit={e=>{e.preventDefault();publishScore();}}>
+            <label className="field-label" htmlFor="player-name">Имя в таблице лидеров</label>
+            <input id="player-name" value={name} onChange={e=>setName(e.target.value)} className="name-input" placeholder="Ваш позывной" minLength={2} maxLength={20} required autoComplete="nickname" enterKeyHint="send" autoFocus/>
+            {error&&<p className="form-error" role="alert">{error}</p>}
+            <button className="button secondary" type="submit" disabled={busy||name.trim().length<2}>В ТАБЛИЦУ ЛИДЕРОВ</button>
+          </form>
+          <button className="button orange" onClick={start} disabled={busy}>ЕЩЁ ЗАЕЗД</button><button className="text-button" onClick={()=>{setModal('none');setScreen('menu');}}>В ГЛАВНОЕ МЕНЮ</button>
+        </>}
       </dialog>
     </section>
     {screen!=='garage'&&screen!=='color'&&<footer className="outside-help"><span><kbd>←</kbd><kbd>→</kbd> УПРАВЛЕНИЕ</span><span>УДЕРЖИВАЙ <kbd>ПРОБЕЛ</kbd> АЗОТ</span><span>3 ЖИЗНИ. ОДНА ТРАССА. ВАШ РЕКОРД.</span></footer>}

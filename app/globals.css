@@ -87,6 +87,11 @@
 .nitro-meter-track i{display:block;width:100%;height:100%;border-radius:4px;background:var(--nitro-color);transform-origin:left;transition:transform 80ms linear;box-shadow:0 0 5px #5dedf54d}
 .nitro-meter.active{--nitro-color:#c3fcff}.nitro-meter.active .nitro-meter-track{box-shadow:0 0 0 1px #9ff4ff80,0 0 12px #58e9f866}
 .nitro-meter.low{--nitro-color:#ffd08a}
+.score-submission{margin:22px 0 4px;padding:15px;border:1px solid #59dce550;border-radius:12px;background:linear-gradient(135deg,#13323a,#0b1a23);text-align:left}
+.submitted-score{display:flex;align-items:center;justify-content:space-between;gap:14px}.submitted-score>span{min-width:0;font-size:18px;font-weight:700;overflow-wrap:anywhere}.submitted-score small{display:block;margin-top:6px;color:#a8c1cd;font-size:12px;font-weight:400}.submitted-score>strong{flex-shrink:0;font:700 32px/1 'Rajdhani',Arial,sans-serif;color:#b2faff;text-align:right}.submitted-score>strong small{font-size:10px;letter-spacing:.1em}
+.submission-status{display:flex;align-items:center;gap:8px;margin-top:14px!important;color:#a6eaf0;font:500 14px/1.4 'Barlow Condensed',Arial,sans-serif}
+.submission-status i{width:8px;height:8px;flex-shrink:0;border-radius:50%;background:currentColor}.sending .submission-status i{animation:submission-pulse 1.4s ease-in-out infinite}.saved .submission-status{color:#adea8d}.score-submission.saved{border-color:#90d57366}.error .submission-status{color:#ffb398}.score-submission.error{border-color:#f1a48066}.submission-error{color:#e9c7bd;font-size:13px;line-height:1.5;margin-top:9px!important}.score-submission .button{font-size:17px;min-height:42px}
+@keyframes submission-pulse{50%{opacity:.3}}
 @media(prefers-reduced-motion:reduce){.nitro-meter-track i{transition:none}}
 .race-pause-button{width:46px;height:46px;padding:0;display:grid;place-items:center;border:1px solid #d0e2e548;border-radius:13px;background:#07141d9e;box-shadow:0 3px 12px #0003;pointer-events:auto;touch-action:manipulation}
 .race-pause-button:hover{background:#172e3be6}
