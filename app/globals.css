@@ -29,6 +29,15 @@
 @media(max-width:650px) and (max-height:700px){.experience-shell{padding:0}.phone-frame{height:100svh;min-height:540px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
 
+.setup-screen.garage{overflow-y:auto;overscroll-behavior:contain;padding-bottom:max(24px,env(safe-area-inset-bottom))}
+.garage>*{flex-shrink:0}
+.garage .garage-preview{height:auto;min-height:0;margin-top:16px}
+.garage-about{margin-top:22px}
+.garage-about h2{font-size:23px}
+.garage-about .vehicle-card{margin-top:12px;grid-template-columns:52px minmax(0,1fr) 52px;gap:9px}
+.garage-about .dealer-link{margin-top:16px;text-align:center}
+.garage .setup-next{margin-top:22px}
+
 /* Race presentation: calm chrome, readable telemetry and clear action feedback. */
 .race-hud{background:linear-gradient(140deg,#0a1419eb,#101f22d9);box-shadow:0 6px 20px #0005;border-color:#d2e7e324;top:12px}
 .race-hud strong{font-variant-numeric:tabular-nums;font-size:30px}

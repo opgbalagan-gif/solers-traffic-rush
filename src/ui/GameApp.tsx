@@ -8,7 +8,7 @@ import { DEFAULT_STATE, loadGameState, saveGameState, type Driver } from '@/src/
 import { PhaserGame, type PhaserGameHandle } from '@/src/ui/PhaserGame';
 import { DriverAvatar, GameLogo, Icon, VehiclePreview } from '@/src/ui/Visuals';
 
-type Screen='menu'|'driver'|'color'|'game';
+type Screen='menu'|'driver'|'color'|'garage'|'game';
 type Modal='none'|'settings'|'records'|'tasks'|'continue'|'phone'|'result';
 type Config={socialUrl:string|null;socialLabel:string;phoneReady:boolean;privacyUrl:string|null;continueMode:string};
 type Leader={name:string;score:number;distance:number};
@@ -113,12 +113,11 @@ export function GameApp(){
         <button className="icon-button settings" aria-label="Настройки" onClick={()=>setModal('settings')}><Icon name="settings"/></button>
         <GameLogo/>
         <div className="menu-hero"><VehiclePreview color={stored.carColor} hero/></div>
-        <div className="menu-actions"><button className="button orange play-button" disabled={!ready} onClick={()=>setScreen('driver')}>ИГРАТЬ</button><button className="button secondary" onClick={()=>setScreen('color')}>ГАРАЖ</button></div>
-        <div className="vehicle-card"><div><strong>ST9</strong><span>ПИКАП</span></div><div className="stat-bars">{[['СКОРОСТЬ',45],['УПРАВЛЕНИЕ',65],['УСКОРЕНИЕ',50]].map(([label,width])=><span key={label}><em>{label}</em><i><b style={{width:width+'%'}}/></i></span>)}</div><div className="drive-type"><span>ПОЛНЫЙ<br/>ПРИВОД</span><strong>4×4</strong></div></div>
-        <nav className="bottom-nav"><button onClick={()=>setModal('tasks')}><Icon name="tasks"/><span>ЗАДАНИЯ</span></button><button onClick={()=>setScreen('color')}><Icon name="garage"/><span>ГАРАЖ</span></button><button onClick={records}><Icon name="trophy"/><span>ЛИДЕРЫ</span></button></nav>
+        <div className="menu-actions"><button className="button orange play-button" disabled={!ready} onClick={()=>setScreen('driver')}>ИГРАТЬ</button><button className="button secondary" onClick={()=>setScreen('garage')}>ГАРАЖ</button></div>
+        <nav className="bottom-nav"><button onClick={()=>setModal('tasks')}><Icon name="tasks"/><span>ЗАДАНИЯ</span></button><button onClick={()=>setScreen('garage')}><Icon name="garage"/><span>ГАРАЖ</span></button><button onClick={records}><Icon name="trophy"/><span>ЛИДЕРЫ</span></button></nav>
       </div>}
-      {(screen==='driver'||screen==='color')&&<div className={`screen setup-screen ${screen}`}>
-        <div className="screen-header"><button className="icon-button" aria-label="Назад" onClick={()=>setScreen(screen==='driver'?'menu':'driver')}><Icon name="back"/></button><h1>{screen==='driver'?'ВЫБЕРИ ВОДИТЕЛЯ':'ВЫБЕРИ ЦВЕТ МАШИНЫ'}</h1></div>
+      {(screen==='driver'||screen==='color'||screen==='garage')&&<div className={`screen setup-screen ${screen}`}>
+        <div className="screen-header"><button className="icon-button" aria-label="Назад" onClick={()=>setScreen(screen==='color'?'driver':'menu')}><Icon name="back"/></button><h1>{screen==='driver'?'ВЫБЕРИ ВОДИТЕЛЯ':screen==='garage'?'ГАРАЖ':'ВЫБЕРИ ЦВЕТ МАШИНЫ'}</h1></div>
         {screen==='driver'?<>
           <div className="driver-grid">{(['boy','girl'] as const).map(driver=><button key={driver} className={`driver-card ${stored.driver===driver?'selected':''}`} onClick={()=>chooseDriver(driver)} aria-label={driver==='boy'?'Выбрать парня':'Выбрать девушку'} aria-pressed={stored.driver===driver}><DriverAvatar driver={driver}/><b>{driver==='boy'?'♂':'♀'}</b></button>)}</div>
           <button className="button green setup-next" onClick={()=>setScreen('color')}>ДАЛЕЕ</button>
@@ -126,9 +125,14 @@ export function GameApp(){
           <div className="garage-preview"><VehiclePreview color={stored.carColor}/></div>
           <div className={`swatches ${stored.driver==='girl'?'eight':''}`} aria-label="Цвет кузова">{palette.map(color=><button key={color.value} aria-label={color.name} title={color.name} aria-pressed={stored.carColor===color.value} className={stored.carColor===color.value?'selected':''} style={{'--paint':color.value} as CSSProperties} onClick={()=>updateStored({carColor:color.value})}/>)}</div>
           <p className="paint-name">{palette.find(c=>c.value===stored.carColor)?.name}</p>
+          {screen==='garage'&&<section className="garage-about" aria-labelledby="garage-about-title">
+            <h2 id="garage-about-title">О МАШИНЕ</h2>
+            <div className="vehicle-card"><div><strong>ST9</strong><span>ПИКАП</span></div><div className="stat-bars">{[['СКОРОСТЬ',45],['УПРАВЛЕНИЕ',65],['УСКОРЕНИЕ',50]].map(([label,width])=><span key={label}><em>{label}</em><i><b style={{width:width+'%'}}/></i></span>)}</div><div className="drive-type"><span>ПОЛНЫЙ<br/>ПРИВОД</span><strong>4×4</strong></div></div>
+            <a className="dealer-link" href="https://sollers-avilon.ru/models/st9/" target="_blank" rel="noreferrer">ОБ АВТОМОБИЛЕ ST9 ↗</a>
+          </section>}
           <button className="button green setup-next" onClick={start} disabled={busy}>{busy?'ВЫЕЗЖАЕМ…':'ПОЕХАЛИ'}</button>
         </>}
-        <div className="setup-steps"><i className="active"/><i className={screen==='color'?'active':''}/><span>{screen==='driver'?'01 / ВОДИТЕЛЬ':'02 / ВАШ ST9'}</span></div>
+        {screen!=='garage'&&<div className="setup-steps"><i className="active"/><i className={screen==='color'?'active':''}/><span>{screen==='driver'?'01 / ВОДИТЕЛЬ':'02 / ВАШ ST9'}</span></div>}
       </div>}
       {screen==='game'&&<div className={`screen game-screen ${hud.boosting?'is-boosting':''}`}>
         <PhaserGame key={runId} ref={game} carColor={stored.carColor} onHud={onHud} onExhausted={onExhausted} onSound={onSound}/>
@@ -144,7 +148,7 @@ export function GameApp(){
       </div>}
       <dialog ref={modalRef} className="modal-card" onCancel={event=>{event.preventDefault();closeModal();}}>
         <button className="modal-close icon-button" aria-label="Закрыть" onClick={closeModal}><Icon name="close"/></button>
-        {modal==='settings'&&<><span className="eyebrow">SOLLERS TRAFFIC RUSH</span><h2>НАСТРОЙКИ</h2><button className="setting-row" onClick={()=>{initAudio();setSound(!sound);}}><Icon name={sound?'sound':'mute'}/><span>Звук двигателя</span><b>{sound?'ВКЛ':'ВЫКЛ'}</b></button><div className="instructions"><p><kbd>←</kbd> <kbd>→</kbd> или <kbd>A</kbd> <kbd>D</kbd> — сменить полосу</p><p><kbd>Пробел</kbd> — 4H Boost</p><p><kbd>Esc</kbd> — пауза</p><p>На телефоне — свайпы, касания трассы или стрелки.</p><p>У вас 3 жизни. После удара ST9 на 3 секунды становится прозрачным.</p></div><a className="dealer-link" href="https://sollers-avilon.ru/models/st9/" target="_blank" rel="noreferrer">ОБ АВТОМОБИЛЕ ST9 ↗</a></>}
+        {modal==='settings'&&<><span className="eyebrow">SOLLERS TRAFFIC RUSH</span><h2>НАСТРОЙКИ</h2><button className="setting-row" onClick={()=>{initAudio();setSound(!sound);}}><Icon name={sound?'sound':'mute'}/><span>Звук двигателя</span><b>{sound?'ВКЛ':'ВЫКЛ'}</b></button><div className="instructions"><p><kbd>←</kbd> <kbd>→</kbd> или <kbd>A</kbd> <kbd>D</kbd> — сменить полосу</p><p><kbd>Пробел</kbd> — 4H Boost</p><p><kbd>Esc</kbd> — пауза</p><p>На телефоне — свайпы, касания трассы или стрелки.</p><p>У вас 3 жизни. После удара ST9 на 3 секунды становится прозрачным.</p></div></>}
         {modal==='tasks'&&<><span className="eyebrow">КАЖДЫЙ ЗАЕЗД — НОВЫЙ ВЫЗОВ</span><h2>ЗАДАНИЯ</h2>{[['Обгони 20 машин',hud.overtakes,20],['Собери 5 бонусов',hud.bonuses,5],['Проедь 3 километра',hud.distance,3000]].map(([label,value,target])=><div className="mission" key={label}><div><span>{label}</span><b>{Number(value)>=Number(target)?'✓':`${value} / ${target}`}</b></div><progress value={Number(value)} max={Number(target)}/></div>)}<p className="muted">Собирайте ящики +10 и обгоняйте без столкновений — серия обгонов даёт больше очков.</p><button className="button green" onClick={()=>{setModal('none');setScreen('driver');}}>НА ТРАССУ</button></>}
         {modal==='records'&&<><span className="eyebrow">ОБЩИЙ ЗАЧЁТ</span><h2>ТАБЛИЦА ЛИДЕРОВ</h2><div className="personal-best"><span>ВАШ РЕКОРД НА УСТРОЙСТВЕ</span><strong>{stored.bestScore}</strong></div>{leaderLoading?<p role="status">Загружаем результаты…</p>:leaderboard.length?<ol className="leaderboard">{leaderboard.map((row,i)=><li key={i}><b>{String(i+1).padStart(2,'0')}</b><span>{row.name}<small>{(row.distance/1000).toFixed(1)} км</small></span><strong>{row.score}</strong></li>)}</ol>:!error?<p className="muted">Пока нет результатов.<br/>Станьте первым на этой трассе.</p>:null}{error&&<p className="form-error" role="alert">{error}</p>}<button className="button green" onClick={()=>{setModal('none');setScreen('driver');}}>ПОБИТЬ РЕКОРД</button></>}
         {modal==='continue'&&<><span className="eyebrow">ТРИ ЖИЗНИ ПОТРАЧЕНЫ</span><h2>ЕЩЁ ОДИН<br/>ЗАЕЗД?</h2><div className="continue-score"><strong>{hud.score}</strong><span>ОЧКОВ · {(hud.distance/1000).toFixed(1)} КМ</span></div><p>Верните 3 жизни и продолжайте<br/>с того же места.</p>{phoneTurn?<><p className="muted">Оставьте телефон, чтобы получить ещё одну попытку.</p><button className="button orange" onClick={()=>setModal('phone')}>ОСТАВИТЬ ТЕЛЕФОН</button></>:<>{config.socialUrl?<><a className="button green" href={config.socialUrl} target="_blank" rel="noreferrer" onClick={()=>setSocialOpened(true)}>ПОДПИСАТЬСЯ · {config.socialLabel}</a>{socialOpened&&<><p className="muted">Подтвердите подписку. Автоматическая проверка пока не подключена.</p><button className="button orange" onClick={continueRace}>Я ПОДПИСАЛСЯ · ПРОДОЛЖИТЬ</button></>}</>:<><p className="muted">В демоверсии продолжение доступно без подписки.</p><button className="button green" onClick={continueRace}>ВЕРНУТЬ 3 ЖИЗНИ · ДЕМО</button></>}</>}{config.continueMode==='choice'&&<button className="text-button" onClick={()=>setModal('phone')}>ИЛИ ОСТАВИТЬ ТЕЛЕФОН</button>}<button className="text-button" onClick={finish}>ЗАВЕРШИТЬ И СОХРАНИТЬ РЕЗУЛЬТАТ</button></>}
