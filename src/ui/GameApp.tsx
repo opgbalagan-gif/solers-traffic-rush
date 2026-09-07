@@ -120,7 +120,9 @@ export function GameApp(){
     setBusy(true);setError('');
     try{
       if(!session.current)throw new Error('Этот заезд начат без сервера. Новый заезд можно будет записать в таблицу.');
-      await api('scores',{...session.current,name,score:hud.score,distance:hud.distance});setSaved(true);
+      const result=await api<{saved:boolean}>('scores',{...session.current,name,score:hud.score,distance:hud.distance});
+      if(result.saved!==true)throw new Error('Сервер не подтвердил сохранение. Попробуйте ещё раз.');
+      setSaved(true);
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   };
   const phoneTurn=config.continueMode==='phone-third'?(continuations+1)%3===0:config.continueMode==='choice'?false:continuations%2===1;
